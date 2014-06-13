@@ -1,0 +1,85 @@
+global proc createLSystem(string $iter, string $step, string $angle, string $grammar, string $nodeRadio )
+{
+	int $iterations = `intSliderGrp -q -v $iter`;
+	float $stepSize = `floatSliderGrp -q -v $step`;
+	float $defAngle = `floatSliderGrp -q -v $angle`;
+	string $gram = `scrollField -q -tx $grammar`;
+	int $node = `checkBoxGrp -q -en1 $nodeRadio`;
+
+	if ($node == 1){
+		print "Creating L-System with nodes";
+		
+		//Setup Node System that goes around the LSystem
+		string $topNode = `createNode transform -n LSystem1`;
+		string $shapeNode = `createNode mesh -n LSystemShape1 -p $topNode`;
+		sets -add initialShadingGroup LSystemShape1;
+		
+		//Create LSystem Node
+		string $lNode = `createNode LSystemNode -n LSystemNode1`;
+		setAttr ($lNode+".time") $iterations;
+		setAttr ($lNode+".angle") $defAngle;
+		setAttr ($lNode+".step") $stepSize;
+		setAttr ($lNode+".grammar") -type "string" $gram;
+		
+		//Attach LSystem Node
+		connectAttr time1.outTime ($lNode+".time");
+		connectAttr ($lNode+".outputMesh") ($shapeNode+".inMesh");
+	}
+	else{
+		LSystemCmd -step $stepSize -angle $defAngle -grammar $gram -iterations $iterations;
+	}
+}
+
+global proc browseButton( string $field )
+{
+	string $chosenFile = `fileDialog -dm "*.txt"`;
+	int $fid = `fopen $chosenFile "r"`;
+	string $lines = "";
+	string $line = `fgetline $fid`;
+	$lines = strip($line);
+	while (size($line) > 0){
+		$lines += "\n";
+		$line = `fgetline $fid`;
+		$lines += strip($line);
+	}
+	fclose $fid;
+	
+	scrollField -e -text $lines $field;
+}
+
+global proc createLSystemWindow()
+{
+	
+	window -title "Call LSystem Command" -w 550 LSystemWindow;
+	columnLayout;
+		rowLayout -numberOfColumns 1;
+			text -label "Enter a Grammar";
+		setParent ..;
+		string $gramField = `scrollField -w 575 -wordWrap true -editable true`;
+		setParent ..;
+		rowLayout -numberOfColumns 2 -columnWidth2 515 35;
+			text -label "Browse for Grammar File";
+			button -label "Browse..." -command ("browseButton " + $gramField);
+	setParent ..;
+	frameLayout -label "LSystem Parameters" -collapsable 1 -w 575;
+		columnLayout;
+			string $iterSlider = `intSliderGrp -label "Iterations" -value 0.0 -field true -minValue 0.0 -fieldMinValue 0.0`;
+			string $stepSlider = `floatSliderGrp -label "Default Step Size" -value 1.0 -field true -minValue 0.0 -fieldMinValue 0.0`;
+			string $angleSlider = `floatSliderGrp -label "Default Angle" -value 90.0 -field true -minValue 0.0 -maxValue 360.0 -fieldMinValue 0.0 -fieldMaxValue 360.0`;
+		setParent ..;
+	setParent ..;
+	frameLayout -label "LSystem Options" -collapsable 1 -w 575;
+		columnLayout;
+			string $nodeCheck = `checkBoxGrp -numberOfCheckBoxes 1 -label "Create Node System"`;
+		setParent ..;
+	setParent ..;
+	columnLayout;
+		rowLayout -numberOfColumns 2 -columnWidth2 530 20;
+			button -label "Create" -command ("createLSystem" + " " + $iterSlider + " " + $stepSlider + " " + $angleSlider + " " + $gramField + " " + $nodeCheck + "; deleteUI LSystemWindow");
+			button -label "Cancel" -command "deleteUI LSystemWindow";
+	showWindow LSystemWindow;
+}
+
+string $currentShelf = `tabLayout -q -st $gShelfTopLevel`;
+setParent $currentShelf;
+shelfButton -image1 "commandButton.png" -label "LSystem" -annotation "Create an LSystem" -command "createLSystemWindow()";

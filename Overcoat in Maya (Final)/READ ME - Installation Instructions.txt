@@ -1,0 +1,12 @@
+Installing OverCoat
+
+1. Installing Overcoat Tool Properties and Values
+	Setup environment variable:
+		MAYA_SCRIPT_PATH to this directory (the overcoat_overcoat directory)
+
+ 	Alternatively you can copy following files to <MayaInstallDirectory>\scripts\other
+		overcoatHairToolProperties
+		overcoatHairToolValues 
+
+2. Installing brush images
+	Copy the overcoat_Images folder to <MayaInstallDirectory>\icons

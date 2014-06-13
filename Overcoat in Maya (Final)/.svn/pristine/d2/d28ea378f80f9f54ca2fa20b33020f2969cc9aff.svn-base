@@ -1,0 +1,48 @@
+global proc overcoatLevelToolProperties (){
+	int $propNumOfBrushes = 16; //Number of brushes + 1;
+	string $parent = `toolPropertyWindow -q -location`;
+	setParent $parent;
+
+	setUITemplate -pushTemplate OptionsTemplate;
+
+	columnLayout overcoatLevelTool;
+         frameLayout -label "Attributes" -collapsable true -collapse false  -borderStyle "etchedIn"; 
+               columnLayout -columnAttach "both" 5 -rowSpacing 5 -columnWidth 300; 
+		    colorSliderGrp -l "Brush Color" LevelToolColorSlider;
+                    floatSliderGrp -columnWidth 1 80 -label "Thickness"
+                    			-field true
+                    			-value 13
+                    			-minValue 1.0 -maxValue 30.0 
+                    			-fieldMinValue 1.0
+                    			LevelToolThickness;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Transparency"
+                                        -field true
+                                        -value 13
+                                        -minValue 0.0 -maxValue 1.0 
+                                        -fieldMinValue 0.0 -fieldMaxValue 1.0
+                                        LevelToolTransparency;
+                                        
+                    floatSliderGrp -columnWidth 1 80 -label "Level"
+                                        -field true
+                                        -value 13
+                                        -minValue - 10.0 -maxValue 10.0 
+                                        -fieldMinValue - 10.0 -fieldMaxValue 10.0
+                                        LevelToolLevelSet;
+               setParent ..;
+         setParent ..;
+
+        int $i;
+	frameLayout -label "Brush" -collapsable true -collapse false -borderStyle "etchedIn"; 
+		text -label "   Current Brush" -align "left"; 
+		image -image "overcoat_Images/type1.bmp" currentBrush;
+		text -label "   Change Brush" -align "left"; 
+               	gridLayout -numberOfColumns 6 -cellWidthHeight 55 60;
+               		for($i = 1; $i < $propNumOfBrushes; $i++){
+               			string $label = "brushButton" + $i;
+               			symbolButton -image ("overcoat_Images/type" + $i + ".bmp") $label;
+               		}
+	setParent ..; 
+setParent ..;
+setUITemplate -popTemplate;
+}

@@ -1,0 +1,371 @@
+//-
+// ==========================================================================
+// Copyright 1995,2006,2008 Autodesk, Inc. All rights reserved.
+//
+// Use of this software is subject to the terms of the Autodesk
+// license agreement provided at the time of installation or download,
+// or which otherwise accompanies this software in either electronic 
+// or hard copy form.
+// ==========================================================================
+//+
+
+#include <maya/MIOStream.h>
+#include <maya/MRenderView.h>
+#include <maya/M3dView.h>
+#include <math.h>
+#include "OverCoatCmd.h"
+
+#include "vec.h"
+#include <vector>
+
+#include <maya/MArgList.h>   
+#include <maya/MTime.h>
+#include <maya/MMatrix.h>
+#include <maya/MFnMesh.h>
+#include <maya/MFloatMatrix.h>
+#include <maya/MFnMeshData.h>
+#include <maya/MPointArray.h>
+#include <maya/MItDependencyNodes.h>
+#include <maya/MItDependencyGraph.h>
+#include <maya/MItDag.h>
+#include <maya/MFnCamera.h>
+#include <maya/MFnTransform.h>
+#include <maya/MUintArray.h>
+#include <maya/MFloatPoint.h>
+#include <maya/MDagPath.h>
+#include <maya/MFnNurbsCurve.h>
+#include <maya/MItCurveCV.h>
+#include <maya/MGlobal.h>
+
+#include <maya/MItSelectionList.h>
+#include <maya/MSelectionList.h>
+
+#include "OverCoatNode.h" 
+
+#define Image_Height 480
+#define Image_Width 640 
+#define Sample_Points 1000
+
+//I know how to change rendering; will change it later on.   
+MStatus OverCoatCmd::doIt( const MArgList& args )
+{
+        MStatus stat = MS::kSuccess;
+
+		MGlobal::displayInfo(MString("Creating Overcoat Node"));
+
+		int thickNess = 1; 
+		double weight = 1.0;   
+		double strokeOffset = 200.0f; 
+		double transparency = 1; 
+		double level = 1;
+		double splineColorRed = 255; 
+		double splineColorGreen = 255; 
+		double splineColorBlue = 255; 
+
+		int brushflag = 0; 
+
+		//loop through the command line arguments                
+		for(int i = 0; i < args.length(); ++i)
+		{
+			//check for a valid arguments      
+			if(args.asString(i, &stat) == "-thick")
+			{
+				MString para1 = args.asString(++i); 
+				thickNess = para1.asDouble(); 
+			}
+			if(args.asString(i, &stat) == "-weight")
+			{
+				MString para2 = args.asString(++i);
+				weight = para2.asDouble();
+			}
+			if(args.asString(i, &stat) == "-strok")
+			{
+				MString para3 = args.asString(++i);
+				strokeOffset = para3.asDouble();
+			}
+			if(args.asString(i, &stat) == "-trans")
+			{
+				MString para4 = args.asString(++i);
+				transparency = para4.asDouble(); 
+			}
+			if(args.asString(i, &stat) == "-level")
+			{
+				MString para5 = args.asString(++i);
+				level = para5.asDouble(); 
+			}
+			if(args.asString(i, &stat) == "-red")    
+			{
+				MString para6 = args.asString(++i);
+				splineColorRed = para6.asDouble();       
+			}
+			if(args.asString(i, &stat) == "-green")           
+			{      
+				MString para7 = args.asString(++i);   
+				splineColorGreen = para7.asDouble();          
+			}
+			if(args.asString(i, &stat) == "-blue")
+			{
+				MString para8 = args.asString(++i);
+				splineColorBlue = para8.asDouble(); 
+			}   
+		}            
+
+        // Check if the render view exists. It should always exist, unless                     
+        // Maya is running in batch mode.   
+        //
+		   //get the view direction and eye position       
+			MFloatVector view_dir; 
+			MFloatPoint eye_pos;
+			MItDag it1(MItDag::kDepthFirst, MFn::kCamera); 
+			MVector upDirection; 
+			MVector rightDirection; 
+
+			MFloatMatrix projectionMat;   
+			double horizontalFOV; 
+			double verticalFOV; 
+			double horizontalFOV2; 
+			double verticalFOV2; 
+
+			//go through all the camera in the maya and only execute the perspective camera   
+			for ( ; !it1.isDone(); it1.next() )
+			{   
+				MDagPath campath;   
+				it1.getPath(campath); 
+				MFnCamera fn(campath);
+	
+				MString persp = "perspShape"; 
+				if(fn.name()==persp)
+				{
+					view_dir=MFloatVector(fn.viewDirection(MSpace::kWorld));
+					eye_pos=MFloatPoint(fn.eyePoint(MSpace::kWorld)); 
+
+					fn.getPortFieldOfView (640, 400, horizontalFOV, verticalFOV); 
+					horizontalFOV2 = fn.horizontalFieldOfView(0); 
+					verticalFOV2 = fn.verticalFieldOfView(0); 
+
+					upDirection = fn.upDirection(MSpace::kWorld, 0); 
+			    	rightDirection = fn.rightDirection(MSpace::kWorld, 0); 
+
+					projectionMat = fn.projectionMatrix(0); 
+				}
+			}
+				/*cout<<"camera:"<<eye_pos.x<<","<<eye_pos.y<<","<<eye_pos.z<<endl; 
+				cout<<"view dir:"<<view_dir.x<<","<<view_dir.y<<","<<view_dir.z<<endl; 
+				cout<<"upDirection:"<<upDirection.x<<","<<upDirection.y<<","<<upDirection.z<<endl; 
+				cout<<"rightDirection:"<<rightDirection.x<<","<<rightDirection.y<<","<<rightDirection.z<<endl;*/
+
+			int index = 0; 
+			vector <int> numCVs(1000); 
+			vector <MPointArray> splines (100); 
+			for (int i = 0; i < 100; i++)
+			{
+				splines[i].setLength(1000000); 
+			}
+
+			vector <MPointArray> splinesPara (100); 
+			for (int i = 0; i < 100; i++)
+			{
+				splinesPara[i].setLength(1000000); 
+			}
+
+			MPointArray StartPoint (100, MPoint::origin); 
+			MPointArray EndPoint (100, MPoint::origin); 
+			double StartPara[100]; 
+			double EndPara[100]; 
+			for (int i = 0; i < 100; i++)
+			{
+				StartPara[i] = 0.0; 
+				EndPara[i] = 0.0; 
+			}
+
+			int array[10]; 
+
+			MItDag it(MItDag::kDepthFirst, MFn::kNurbsCurve);
+
+			//go through all the spline (CVcurves) in the maya view and record all of them      
+			for ( ; !it.isDone(); it.next() )   
+			{
+				MDagPath curvepath;
+				it.getPath(curvepath);        
+				//definition for curves            
+				MFnNurbsCurve curveFn (curvepath); 
+				numCVs[index] = curveFn.numCVs();
+
+
+				//MStatus *returnStatus;
+				//MString thick; 
+				//curveFn.attribute (thick, returnStatus);
+				//MDataHandle thickData = data.inputValue(thick, &returnStatus ); 
+			
+				/*if(returnStatus)
+				{
+				    cout<<"thickness is: " <<thick<<endl;      
+				}*/
+				curveFn.getCVs (splines[index], MSpace::kObject);
+
+
+				int LEN = splines[index].length();
+		
+				StartPoint[index] = splines[index][0];
+				EndPoint[index] = splines[index][LEN-1]; 
+
+				curveFn.getParamAtPoint(StartPoint[index], StartPara[index], MSpace::kObject); 
+				curveFn.getParamAtPoint(EndPoint[index], EndPara[index], MSpace::kObject); 
+
+				int arrIndex = 0;    
+				for (double u = StartPara[index]; u <=EndPara[index]; u = u+0.001)
+				{
+					MPoint CurrentPoint;    
+
+					curveFn.getPointAtParam(u, CurrentPoint, MSpace::kObject); 
+					splinesPara[index][arrIndex].x= CurrentPoint.x; 
+					splinesPara[index][arrIndex].y= CurrentPoint.y;     
+					splinesPara[index][arrIndex].z= CurrentPoint.z; 
+					arrIndex++;   
+				}   
+			index++; 
+		   }  
+
+		// cout<<"num of cv curves:"<< index <<endl;           
+		//start to render in the maya render view port.     
+        if (!MRenderView::doesRenderEditorExist())
+        {
+                displayError( 
+                        "Cannot renderViewInteractiveRender in batch render mode.\n"
+                        "Run in interactive mode, so that the render editor exists." );
+                return MS::kFailure;
+        }
+
+        if (!MRenderView::doesRenderEditorExist())
+        {
+                displayError( 
+                        "Cannot renderViewInteractiveRender in batch render mode.\n"
+                        "Run in interactive mode, so that the render editor exists." );
+                return MS::kFailure;
+        }
+
+		//MRenderView::startRender(Image_Height, Image_Width, false, false);
+		MRenderView::startRender(Image_Width, Image_Height, false, false);
+		RV_PIXEL* pixels = new RV_PIXEL[Image_Height*Image_Width];
+		int indexPixel = 0;   
+
+		//initialize the background color with white             
+		for (int i = 0;  i < Image_Height; i++)
+		{
+			for (int j = 0; j< Image_Width; j++)
+			{
+				pixels[indexPixel].r = 255;
+				pixels[indexPixel].g = 255;
+				pixels[indexPixel].b = 255;   
+				pixels[indexPixel].a = 255;
+                indexPixel++;
+			}
+		}
+	
+		//project each points to the plane               
+		for(int i = 0; i<index; i++)
+		{
+			for(int j = 0; j<(1000*EndPara[i]+1); j++)   
+			{
+				//some definitions for setting up the coordinate systems 
+				double totalLength = 630;
+
+				//calculating the projection points 
+				vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+				vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+				double aDotb = Dot (a, b);
+				vec3 projection = aDotb*b;    
+
+				double targetLen = totalLength*a.Length()/projection.Length(); 
+				vec3 finalVec = targetLen*(a.Normalize());
+				vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+
+				//some difinition for setting up the coordinate systems 
+				double tanTheta = (Image_Height/2.0)/totalLength; 
+				double tanPhi = (Image_Width/2.0)/totalLength; 
+				vec3 C (view_dir.x*totalLength, view_dir.y*totalLength, view_dir.z*totalLength); 
+				vec3 M (eye_pos.x + C[0], eye_pos.y + C[1], eye_pos.z + C[2]); 
+				vec3 U (upDirection[0], upDirection[1], upDirection[2]); 
+				vec3 A = C.Cross(U); 
+				vec3 B = A.Cross(C); 
+				double magA = A.Length(); 
+				double magB = B.Length(); 
+				double magC = C.Length(); 
+				double scalerH = magC*tanPhi/magA; 
+				double scalerV = magC*tanTheta/magB; 
+				vec3 H = scalerH*A; 
+				vec3 V = scalerV*B; 
+
+				vec3 P = finalPos; 
+				//find out x, y in the NDC coordinate 
+				double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+				double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+				int xAxis = (int) (Sx*640 + 0.5);
+				int yAxis = (int) (Sy*480 + 0.5); 
+
+				if(((xAxis - thickNess) > 0)&&((xAxis + thickNess) < Image_Width) && ((yAxis - thickNess) > 0)&&((yAxis + thickNess) < Image_Height))
+				{
+					for(int k = 0; k < thickNess; k++)   
+					{
+					    int getIndex = (yAxis + k)*Image_Width + (xAxis);   
+						pixels[getIndex].r = splineColorRed*255;
+						pixels[getIndex].g = splineColorGreen*255;
+						pixels[getIndex].b = splineColorBlue*255;       
+						pixels[getIndex].a = 255/transparency;   
+					}
+				}
+				
+				
+				////find out the finalPos in H and V direction      
+				//vec3 normalH = H.Normalize(); 
+				//double finalDotH = Dot(finalPos, normalH);  
+				//vec3 ProjectionH = finalDotH*normalH; 
+
+				//vec3 normalV = V.Normalize(); 
+				//double finalDotV = Dot(finalPos, normalV);
+				//vec3 ProjectionV = finalDotV*normalV; 
+
+				//int xAxis = (int) (ProjectionH[0] + 0.5);   
+				//int yAxis = (int) (ProjectionV[1] + 0.5);    
+				////int xAxis = (int) (finalPos[0]+0.5);     
+				////int yAxis = (int) (finalPos[1]+0.5);    
+
+		  //    //  if(((xAxis - thickNess) > -(Image_Height/2))&&((xAxis + thickNess) < (Image_Height/2)) && ((yAxis - thickNess) > -(Image_Width/2))&&((yAxis + thickNess) < (Image_Width/2)))
+				// if(((xAxis - thickNess) > -(Image_Width/2))&&((xAxis + thickNess) < (Image_Width/2)) && ((yAxis - thickNess) > -(Image_Height/2))&&((yAxis + thickNess) < (Image_Height/2)))
+				////if(((xAxis - 25) > -(Image_Height/2))&&((xAxis + 25) < (Image_Height/2)) && ((yAxis - 25) > -(Image_Width/2))&&((yAxis + 25) < (Image_Width/2))) 
+				//{     
+				//	for(int k = 0; k < thickNess; k++)   
+				//	{
+				//		//int getIndex = (yAxis + k + (Image_Width/2))*Image_Height + (xAxis+(Image_Height/2));    
+				//	    int getIndex = (yAxis + k + (Image_Height/2))*Image_Width + (xAxis+(Image_Width/2));   
+				//		pixels[getIndex].r = splineColorRed*255;
+				//		pixels[getIndex].g = splineColorGreen*255;
+				//		pixels[getIndex].b = splineColorBlue*255;       
+				//		pixels[getIndex].a = 255/transparency;   
+				//	}
+				//}
+			}
+		} 
+
+		//update all the points in the maya render view port           
+		//MRenderView::updatePixels(0, Image_Height-1, 0, Image_Width-1, pixels);
+		MRenderView::updatePixels(0, Image_Width-1, 0, Image_Height-1, pixels);
+        delete [] pixels;
+		//
+        // Inform the Render View that we have completed rendering the entire image.      
+        //
+        if (MRenderView::endRender() != MS::kSuccess)
+        {
+                displayError( "OverCoat: error occured in endRender." );
+                return MS::kFailure;
+        }  
+
+
+		MString cmd = MString ("RenderViewWindow;");
+		MGlobal::executeCommand(cmd); 
+		   
+
+        return stat;
+
+}

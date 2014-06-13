@@ -1,0 +1,1098 @@
+//-
+// ==========================================================================
+// Copyright 1995,2006,2008 Autodesk, Inc. All rights reserved.
+//
+// Use of this software is subject to the terms of the Autodesk
+// license agreement provided at the time of installation or download,
+// or which otherwise accompanies this software in either electronic 
+// or hard copy form.
+// ==========================================================================
+//+
+
+#include <maya/MIOStream.h>
+#include <maya/MRenderView.h>
+#include <maya/M3dView.h>
+#include <math.h>
+#include "OverCoatCmd.h"
+
+#include "vec.h"
+#include <vector>
+
+#include <maya/MArgList.h>   
+#include <maya/MTime.h>
+#include <maya/MMatrix.h>
+#include <maya/MFnMesh.h>
+#include <maya/MFloatMatrix.h>
+#include <maya/MFnMeshData.h>
+#include <maya/MPointArray.h>
+#include <maya/MItDependencyNodes.h>
+#include <maya/MItDependencyGraph.h>
+#include <maya/MItDag.h>
+#include <maya/MFnCamera.h>
+#include <maya/MFnTransform.h>
+#include <maya/MUintArray.h>
+#include <maya/MFloatPoint.h>
+#include <maya/MDagPath.h>
+#include <maya/MFnNurbsCurve.h>
+#include <maya/MItCurveCV.h>
+#include <maya/MGlobal.h>
+
+#include <maya/MItSelectionList.h>
+#include <maya/MSelectionList.h>
+
+#include "OverCoatNode.h" 
+
+#include <time.h>
+
+#define Image_Height 480
+#define Image_Width 640
+#define MaximumNoOfSpline 1000
+#define Sample_Points 100
+
+//I know how to change rendering; will change it later on.   
+MStatus OverCoatCmd::doIt( const MArgList& args )
+{
+			MStatus stat = MS::kSuccess;
+
+			MGlobal::displayInfo(MString("Creating Overcoat Node"));
+		
+			//define the background color 
+			double backgroundColorR = 255; 
+			double backgroundColorG = 255; 
+			double backgroundColorB = 255; 
+
+			//define several pictures 
+			AnImage1.ReadFromFile("C:/CIS 660/BrushType/type7.bmp");
+			AnImage2.ReadFromFile("C:/CIS 660/BrushType/type8.bmp");
+			AnImage3.ReadFromFile("C:/CIS 660/BrushType/type9.bmp");
+			AnImage4.ReadFromFile("C:/CIS 660/BrushType/type10.bmp");
+
+		   //get the view direction and eye position      
+			MFloatVector view_dir; 
+			MFloatPoint eye_pos;
+			MItDag it1(MItDag::kDepthFirst, MFn::kCamera); 
+			MVector upDirection; 
+			MVector rightDirection; 
+
+			MFloatMatrix projectionMat;   
+			//go through all the camera in the maya and only execute the perspective camera   
+			for ( ; !it1.isDone(); it1.next() )
+			{   
+				MDagPath campath;   
+				it1.getPath(campath); 
+				MFnCamera fn(campath);
+	
+				MString persp = "perspShape"; 
+				if(fn.name()==persp)
+				{
+					view_dir=MFloatVector(fn.viewDirection(MSpace::kWorld));
+					eye_pos=MFloatPoint(fn.eyePoint(MSpace::kWorld));       
+
+					upDirection = fn.upDirection(MSpace::kWorld, 0); 
+			    	rightDirection = fn.rightDirection(MSpace::kWorld, 0); 
+
+					projectionMat = fn.projectionMatrix(0); 
+				}
+			}
+
+			/*cout<<"camera:"<<eye_pos.x<<","<<eye_pos.y<<","<<eye_pos.z<<endl;     
+			cout<<"view dir:"<<view_dir.x<<","<<view_dir.y<<","<<view_dir.z<<endl;   
+			cout<<"upDirection:"<<upDirection.x<<","<<upDirection.y<<","<<upDirection.z<<endl;     
+			cout<<"rightDirection:"<<rightDirection.x<<","<<rightDirection.y<<","<<rightDirection.z<<endl;*/    
+
+			//go through all the spline (CVcurves) in the maya view and record all of them    
+			//define the color and thickness here  
+			vector<double> spacing (MaximumNoOfSpline); 
+			vector<double> transparency (MaximumNoOfSpline); 
+			vector<int> brush (MaximumNoOfSpline); 
+			vector<double> thickness(MaximumNoOfSpline); 
+			vector<MDoubleArray> color (MaximumNoOfSpline); 
+			for(int i = 0; i < MaximumNoOfSpline; i++)
+			{
+				color[i].setLength(4); 
+			}
+			//define the points and parameter array 
+			int index = 0; 
+			vector <int> numCVs(1000); 
+			vector <MPointArray> splines (MaximumNoOfSpline); 
+			for (int i = 0; i < MaximumNoOfSpline; i++)
+			{
+				splines[i].setLength(10000); 
+			}
+
+			vector <MPointArray> splinesPara (MaximumNoOfSpline); 
+			for (int i = 0; i < MaximumNoOfSpline; i++)
+			{
+				splinesPara[i].setLength(10000); 
+			}
+
+			//define the starting points, end points, start parameter, and end parameter of a spline.  
+			//And initialize them all to 0
+			MPointArray StartPoint (MaximumNoOfSpline, MPoint::origin); 
+			MPointArray EndPoint (MaximumNoOfSpline, MPoint::origin); 
+			double StartPara[MaximumNoOfSpline]; 
+			double EndPara[MaximumNoOfSpline]; 
+			for (int i = 0; i < MaximumNoOfSpline; i++)
+			{
+				StartPara[i] = 0.0; 
+				EndPara[i] = 0.0; 
+			}
+
+			//adaptive sampling parameter 
+			vector<double> adaptiveSPara (MaximumNoOfSpline); 
+			//adaptive sampling points 
+		    vector<double> adaptiveSPoint (MaximumNoOfSpline); 
+
+		    
+			MItDag it(MItDag::kDepthFirst, MFn::kNurbsCurve);
+			//go through all the spline (CVcurves) in the maya view and record all of them     
+			for ( ; !it.isDone(); it.next() )   
+			{
+				MDagPath curvepath;
+				it.getPath(curvepath);        
+				//definition for curves            
+				MFnNurbsCurve curveFn (curvepath); 
+				numCVs[index] = curveFn.numCVs();
+
+				//obtain points here 
+				//cout<<"name:"<<curveFn.name(0).asChar()<<endl;   
+				//cout<<"number:"<<OverCoatNode::numOfSplinesCreated<<endl;  
+
+				curveFn.getCVs (splines[index], MSpace::kWorld);
+				int LEN = splines[index].length();
+		
+				StartPoint[index] = splines[index][0];
+				EndPoint[index] = splines[index][LEN-1]; 
+
+				curveFn.getParamAtPoint(StartPoint[index], StartPara[index], MSpace::kObject); 
+				curveFn.getParamAtPoint(EndPoint[index], EndPara[index], MSpace::kObject); 
+
+				int arrIndex = 0;       
+				//for (double u = StartPara[index]; u <=EndPara[index]; u = u+0.001)
+				for (double u = StartPara[index]; u <=EndPara[index]; u = u+0.01)
+				{
+					MPoint CurrentPoint;    
+
+					curveFn.getPointAtParam(u, CurrentPoint, MSpace::kObject); 
+					splinesPara[index][arrIndex].x= CurrentPoint.x; 
+					splinesPara[index][arrIndex].y= CurrentPoint.y;     
+					splinesPara[index][arrIndex].z= CurrentPoint.z; 
+					arrIndex++;   
+				}   
+
+				MString firstPart ("getAttr OverCoatNode"); 
+				MString thic = firstPart + (index+1) + ".thick";    
+
+				//obtain thickness here 
+				MGlobal::executeCommand(thic, thickness[index], true, true);     
+
+				//obtain color here    
+				MString colo = firstPart + (index+1) + ".color"; 
+				MGlobal::executeCommand(colo, color[index], true, true);  
+
+				//obtain brush here 
+				MString brus = firstPart + (index+1) + ".brush"; 
+				MGlobal::executeCommand(brus, brush[index], true, true); 
+
+				//obtain transparency here 
+				MString trans = firstPart + (index+1) + ".transparency"; 
+				MGlobal::executeCommand(trans, transparency[index], true, true); 
+
+				//obtain spacing here 
+				MString spac = firstPart + (index+1) + ".spacing"; 
+				MGlobal::executeCommand(spac, spacing[index], true, true);    
+			    index++; 
+		   }  
+	
+		// cout<<"num of cv curves:"<< index <<endl;      
+
+		//start to render in the maya render view port.     
+        if (!MRenderView::doesRenderEditorExist())
+        {
+                displayError( 
+                        "Cannot renderViewInteractiveRender in batch render mode.\n"
+                        "Run in interactive mode, so that the render editor exists." );
+                return MS::kFailure;
+        }
+
+        if (!MRenderView::doesRenderEditorExist())
+        {
+                displayError( 
+                        "Cannot renderViewInteractiveRender in batch render mode.\n"
+                        "Run in interactive mode, so that the render editor exists." );   
+                return MS::kFailure;
+        }
+
+		MRenderView::startRender(Image_Width, Image_Height, false, false);
+		RV_PIXEL* pixels = new RV_PIXEL[Image_Height*Image_Width];
+		int indexPixel = 0;   
+
+		//initialize the background color with white             
+		for (int i = 0;  i < Image_Width; i++)
+		{
+			for (int j = 0; j< Image_Height; j++)
+			{
+				pixels[j*Image_Width+i].r = backgroundColorR;
+				pixels[j*Image_Width+i].g = backgroundColorG;
+				pixels[j*Image_Width+i].b = backgroundColorB; 
+			    
+			}
+		}
+	
+		//some difinition for setting up the coordinate systems 
+		double totalLength = 630; 
+		double tanTheta = (Image_Height/2.0)/totalLength; 
+		double tanPhi = (Image_Width/2.0)/totalLength; 
+		vec3 C (view_dir.x*totalLength, view_dir.y*totalLength, view_dir.z*totalLength); 
+		vec3 M (eye_pos.x + C[0], eye_pos.y + C[1], eye_pos.z + C[2]); 
+		vec3 U (upDirection[0], upDirection[1], upDirection[2]); 
+		vec3 A = C.Cross(U); 
+		vec3 B = A.Cross(C); 
+		double magA = A.Length(); 
+		double magB = B.Length(); 
+		double magC = C.Length(); 
+		double scalerH = magC*tanPhi/magA; 
+		double scalerV = magC*tanTheta/magB; 
+		vec3 H = scalerH*A; 
+		vec3 V = scalerV*B;
+
+		//project each points to the plane               
+		for(int i = 0; i<index; i++)
+		{
+			//update pixel in the maya viewport  
+			if(brush[i] == 1) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points   
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen   
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+
+						if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+						{
+							//if thickness is less than 3 do nothing
+							if(thickness[i]<3)
+							{
+								for(int k = 0; k < thickness[i]; k++)   
+								{
+									int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+
+									pixels[getIndex].r = color[i][0]*255;
+									pixels[getIndex].g = color[i][1]*255;
+									pixels[getIndex].b = color[i][2]*255;       	
+								}
+							}
+							//if thickness is greater than 3 start brushes    
+							else
+							{
+								int middle = thickness[i]/2;
+								for(int k = middle; k >= 0; k--)
+								{
+										int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+										double blendVal = 0.99 -(middle-k)*0.05;  
+
+										pixels[getIndex].r = color[i][0]*255 * blendVal + (1-blendVal) * backgroundColorR;  
+										pixels[getIndex].g = color[i][1]*255 * blendVal + (1-blendVal) * backgroundColorG;  
+										pixels[getIndex].b = color[i][2]*255 * blendVal + (1-blendVal) * backgroundColorB; 
+								
+								}
+								for(int k = middle+1; k < thickness[i]; k++)
+								{
+									   int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+									   double blendVal = 0.99 -(k-middle-1)*0.05; 
+
+									   pixels[getIndex].r = color[i][0]*255 * blendVal + (1-blendVal) * backgroundColorR;  
+									   pixels[getIndex].g = color[i][1]*255 * blendVal + (1-blendVal) * backgroundColorG;  
+									   pixels[getIndex].b = color[i][2]*255 * blendVal + (1-blendVal) * backgroundColorB; 
+								}
+							}
+					
+						}
+	
+				}
+			}
+
+			//brush type 2 
+			if(brush[i] == 2) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+
+						for(int k = 0; k < thickness[i]; k++)   
+						{
+							int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+                            
+						    double tempColorR = 255 - (255 - color[i][0]*255)*(1 + (double) (254.0*(255 - backgroundColorR)/(255.0*255.0))); 
+							double tempColorG = 255 - (255 - color[i][1]*255)*(1 + (double) (254.0*(255 - backgroundColorG)/(255.0*255.0))); 
+							double tempColorB = 255 - (255 - color[i][2]*255)*(1 + (double) (254.0*(255 - backgroundColorB)/(255.0*255.0))); 
+
+							if(tempColorR >= 255) 
+							{
+								pixels[getIndex].r = 255; 
+							}
+							if(tempColorG >= 255) 
+							{
+								pixels[getIndex].g = 255; 
+							}
+							if(tempColorB >= 255) 
+							{
+								pixels[getIndex].b = 255; 
+							}
+							if(tempColorR < 0) 
+							{
+								pixels[getIndex].r = 0; 
+							}
+							if(tempColorG < 0) 
+							{
+								pixels[getIndex].g = 0; 
+							}
+							if(tempColorB < 0) 
+							{
+								pixels[getIndex].b = 0; 
+							}
+							else
+							{
+								pixels[getIndex].r = tempColorR; 
+								pixels[getIndex].g = tempColorG; 
+								pixels[getIndex].b = tempColorB; 
+							}
+						}
+					}
+				}
+			}
+
+		    //brush type 3   
+			if(brush[i] == 3) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						int middle = thickness[i]/2;
+						for(int k = middle; k >= 0; k= k - 2)
+						{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								pixels[getIndex].r = color[i][0]*255;
+						      	pixels[getIndex].g = color[i][1]*255;
+							    pixels[getIndex].b = color[i][2]*255; 	
+						}
+						for(int k = middle+1; k < thickness[i]; k= k+2)
+						{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								pixels[getIndex].r = color[i][0]*255;
+						      	pixels[getIndex].g = color[i][1]*255;
+							    pixels[getIndex].b = color[i][2]*255; 
+						}
+						for(int k = middle-3; k <middle+3 ; k++)
+						{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								pixels[getIndex].r = color[i][0]*255;
+						      	pixels[getIndex].g = color[i][1]*255;
+							    pixels[getIndex].b = color[i][2]*255; 
+						}
+					}
+				}
+			}
+
+			//brush type 4     
+			if(brush[i] == 4) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						for(int k = 0; k < thickness[i]; k=k+3)   
+						{
+							int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+                        
+						    pixels[getIndex].r = color[i][0]*255;
+							pixels[getIndex].g = color[i][1]*255;
+							pixels[getIndex].b = color[i][2]*255; 
+						}
+					}
+				}
+			}
+
+			//brush type 5          
+			if(brush[i] == 5) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						for(int k = 0; k < thickness[i]; k=k+4)   
+						{
+							int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+                        
+						    pixels[getIndex].r = color[i][0]*255;
+							pixels[getIndex].g = color[i][1]*255;
+							pixels[getIndex].b = color[i][2]*255; 
+
+							int getIndexUp1 = (yAxis + k + 1)*Image_Width + (xAxis); 
+						    pixels[getIndexUp1].r = color[i][0]*255;
+							pixels[getIndexUp1].g = color[i][1]*255;
+							pixels[getIndexUp1].b = color[i][2]*255; 
+
+							int getIndexUp2 = (yAxis + k + 2)*Image_Width + (xAxis); 
+						    pixels[getIndexUp2].r = color[i][0]*255;
+							pixels[getIndexUp2].g = color[i][1]*255;
+							pixels[getIndexUp2].b = color[i][2]*255; 
+						}
+					}
+				}
+			}
+
+			//brush type 6      
+			if(brush[i] == 6) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					int ranNum = rand()%4;
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						for(int k = 0; k < thickness[i]; k=k+ 5)   
+						{
+							for(int upNum = 0; upNum < ranNum; upNum++)
+							{
+								int getIndex = (yAxis + k + upNum)*Image_Width + (xAxis); 
+								int randThou = rand()%1000;
+								double randomNum = (double) (randThou/1000.00); 
+						
+								if(randomNum >= 0.45)
+								{
+									pixels[getIndex].r = color[i][0]*255;
+									pixels[getIndex].g = color[i][1]*255;
+									pixels[getIndex].b = color[i][2]*255; 
+								}else
+								{
+									pixels[getIndex].r = backgroundColorR; 
+									pixels[getIndex].g = backgroundColorG; 
+									pixels[getIndex].b = backgroundColorB; 
+								} 
+							}
+						}
+					}
+				} 
+			}
+
+			//brush type 7    
+			if(brush[i] == 7) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j= j+ Sample_Points*spacing[i])   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - 28) > 0)&&((xAxis + 28) < Image_Width) && ((yAxis - 30) > 0)&&((yAxis + 30) < Image_Height))
+					{
+							for(int smallX = -28; smallX < 28; smallX ++)
+							{
+								for(int smallY = -30; smallY < 30; smallY ++)
+								{
+									RGBApixel Temp = AnImage1.GetPixel(smallX+28, smallY+30);
+									int tempR = Temp.Red; 
+									int tempG = Temp.Green; 
+									int tempB = Temp.Blue; 
+									if((tempR < 245) && (tempG < 245) && (tempB < 245))
+									{
+										int getIndex = (yAxis + 29 - smallY)*Image_Width + (xAxis+ smallX); 
+								   		pixels[getIndex].r = color[i][0]*255;  
+										pixels[getIndex].g = color[i][1]*255; 
+										pixels[getIndex].b = color[i][2]*255; 
+									}
+								}
+							}
+					}
+				}
+			}
+
+			//brush type 8 
+			if(brush[i] == 8) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j = j+Sample_Points*spacing[i])   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+
+					if(((xAxis - 28) > 0)&&((xAxis + 28) < Image_Width) && ((yAxis - 30) > 0)&&((yAxis + 30) < Image_Height))
+					{
+							for(int smallX = -28; smallX < 28; smallX++)
+							{
+								for(int smallY = -30; smallY < 30; smallY++)
+								{
+									RGBApixel Temp = AnImage2.GetPixel(smallX+28, smallY+30);
+									int tempR = Temp.Red; 
+									int tempG = Temp.Green; 
+									int tempB = Temp.Blue; 
+									if((tempR < 245) && (tempG < 245) && (tempB < 245))
+									{
+										int getIndex = (yAxis + 29 - smallY)*Image_Width + (xAxis+ smallX); 
+								   		pixels[getIndex].r = color[i][0]*255;  
+										pixels[getIndex].g = color[i][1]*255; 
+										pixels[getIndex].b = color[i][2]*255; 
+									}
+								}
+							}
+					}
+				}
+			}
+
+			//brush type 9 
+			if(brush[i] == 9) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j = j+ Sample_Points*spacing[i])   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					
+					if(((xAxis - 28) > 0)&&((xAxis + 28) < Image_Width) && ((yAxis - 30) > 0)&&((yAxis + 30) < Image_Height))
+					{
+							for(int smallX = -28; smallX < 28; smallX++)
+							{
+								for(int smallY = -30; smallY < 30; smallY++)
+								{
+									RGBApixel Temp = AnImage3.GetPixel(smallX+28, smallY+30);
+									int tempR = Temp.Red; 
+									int tempG = Temp.Green; 
+									int tempB = Temp.Blue; 
+									if((tempR < 245) && (tempG < 245) && (tempB < 245))
+									{
+										int getIndex = (yAxis + 29 - smallY)*Image_Width + (xAxis+ smallX); 
+								   		pixels[getIndex].r = color[i][0]*255;  
+										pixels[getIndex].g = color[i][1]*255; 
+										pixels[getIndex].b = color[i][2]*255; 
+									}
+								}
+							}
+					}
+				}
+			}
+
+			//brush type 10 
+			if(brush[i] == 10) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j = j+Sample_Points*spacing[i])   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - 28) > 0)&&((xAxis + 28) < Image_Width) && ((yAxis - 30) > 0)&&((yAxis + 30) < Image_Height))
+					{
+							for(int smallX = -28; smallX < 28; smallX++)
+							{
+								for(int smallY = -30; smallY < 30; smallY++)
+								{
+									RGBApixel Temp = AnImage4.GetPixel(smallX+28, smallY+30);
+									int tempR = Temp.Red; 
+									int tempG = Temp.Green; 
+									int tempB = Temp.Blue; 
+									if((tempR < 245) && (tempG < 245) && (tempB < 245))
+									{
+										int getIndex = (yAxis + 29 - smallY)*Image_Width + (xAxis+ smallX); 
+								   		pixels[getIndex].r = color[i][0]*255;  
+										pixels[getIndex].g = color[i][1]*255; 
+										pixels[getIndex].b = color[i][2]*255; 
+									}
+								}
+							}
+					}
+				}
+			}
+
+			//brush type 11 
+			if(brush[i] == 11) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						int middle = thickness[i]/2;
+						for(int k = middle; k >= 0; k= k - 2)
+						{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								pixels[getIndex].r = color[i][0]*255;
+						      	pixels[getIndex].g = color[i][1]*255;
+							    pixels[getIndex].b = color[i][2]*255; 	
+						}
+						for(int k = middle+1; k < thickness[i]; k= k+2)
+						{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								pixels[getIndex].r = color[i][0]*255;
+						      	pixels[getIndex].g = color[i][1]*255;
+							    pixels[getIndex].b = color[i][2]*255; 
+						}
+						for(int k = middle-2; k <middle+2 ; k++)
+						{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								pixels[getIndex].r = color[i][0]*255;
+						      	pixels[getIndex].g = color[i][1]*255;
+							    pixels[getIndex].b = color[i][2]*255; 
+						}
+					}
+				}
+			}
+
+			//brush type 12     
+			if(brush[i] == 12) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						for(int k = 0; k < thickness[i]; k++)   
+						{
+							int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+
+					     	int randThou = rand()%1000;
+							double randomNum = (double) (randThou/1000.00); 
+						
+							if(randomNum >= 0.75)
+							{
+								pixels[getIndex].r = color[i][0]*255;
+								pixels[getIndex].g = color[i][1]*255;
+								pixels[getIndex].b = color[i][2]*255; 
+							}else
+							{
+								pixels[getIndex].r = backgroundColorR; 
+								pixels[getIndex].g = backgroundColorG; 
+								pixels[getIndex].b = backgroundColorB; 
+							} 
+						}
+					}
+				}
+			}
+
+			//brush type 13
+			if(brush[i] == 13) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						//if thickness is less than 3 do nothing 
+		                if(thickness[i]<3)
+						{
+							for(int k = 0; k < thickness[i]; k++)   
+							{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+
+								pixels[getIndex].r = color[i][0]*255;
+								pixels[getIndex].g = color[i][1]*255;
+								pixels[getIndex].b = color[i][2]*255;       	
+							}
+						}
+						//if thickness is greater than 3 start brushes     
+						else
+						{
+						    int middle = thickness[i]/2;
+							for(int k = middle; k >= 0; k--)
+							{
+								    int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+									int randThou = rand()%1000;
+									double randomNum = (double) (randThou/1000.00); 
+									if(randomNum >= (0.99 -(middle-k)*0.13))
+									{
+										pixels[getIndex].r = color[i][0]*255;
+										pixels[getIndex].g = color[i][1]*255;
+										pixels[getIndex].b = color[i][2]*255; 
+									}else
+									{
+										pixels[getIndex].r = backgroundColorR;     
+										pixels[getIndex].g = backgroundColorG; 
+										pixels[getIndex].b = backgroundColorB; 
+									} 
+							}
+							for(int k = middle+1; k < thickness[i]; k++)
+							{
+								   int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								   int randThou = rand()%1000;
+								   double randomNum = (double) (randThou/1000.00); 
+								   if(randomNum >= (0.99 -(k-middle-1)*0.13))
+								   {
+										pixels[getIndex].r = color[i][0]*255;
+										pixels[getIndex].g = color[i][1]*255;
+										pixels[getIndex].b = color[i][2]*255; 
+								   }else
+								   {
+										pixels[getIndex].r = backgroundColorR;     
+										pixels[getIndex].g = backgroundColorG; 
+										pixels[getIndex].b = backgroundColorB; 
+								   } 
+							}
+						}
+					}
+				}
+			}
+
+			//brush type 14 
+			if(brush[i] == 14) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						//if thickness is less than 3 do nothing   
+		                if(thickness[i]<3)
+						{
+							for(int k = 0; k < thickness[i]; k++)   
+							{
+								int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+
+								pixels[getIndex].r = color[i][0]*255;
+								pixels[getIndex].g = color[i][1]*255;
+								pixels[getIndex].b = color[i][2]*255;       	
+							}
+						}
+						//if thickness is greater than 3 start brushes   
+						else
+						{
+						    int middle = thickness[i]/2;
+							for(int k = middle; k >= 0; k--)
+							{
+								    int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+									int randThou = rand()%1000;
+									double randomNum = (double) (randThou/1000.00); 
+									if(randomNum <= (0.99 -(middle-k)*0.13))
+									{
+										pixels[getIndex].r = color[i][0]*255;
+										pixels[getIndex].g = color[i][1]*255;
+										pixels[getIndex].b = color[i][2]*255; 
+									}else
+									{
+										pixels[getIndex].r = backgroundColorR;     
+										pixels[getIndex].g = backgroundColorG; 
+										pixels[getIndex].b = backgroundColorB; 
+									} 
+							}
+							for(int k = middle+1; k < thickness[i]; k++)
+							{
+								   int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+								   int randThou = rand()%1000;
+								   double randomNum = (double) (randThou/1000.00); 
+								   if(randomNum <= (0.99 -(k-middle-1)*0.13))
+								   {
+										pixels[getIndex].r = color[i][0]*255;
+										pixels[getIndex].g = color[i][1]*255;
+										pixels[getIndex].b = color[i][2]*255; 
+								   }else
+								   {
+										pixels[getIndex].r = backgroundColorR;     
+										pixels[getIndex].g = backgroundColorG; 
+										pixels[getIndex].b = backgroundColorB; 
+								   } 
+							}
+						}
+					}
+				}
+			}
+
+			//brush type 15
+			if(brush[i] == 15) 
+			{
+				for(int j = 0; j<(Sample_Points*EndPara[i]+1); j++)   
+				{
+					//calculating the projection points  
+					vec3 a (splinesPara[i][j].x-eye_pos.x, splinesPara[i][j].y-eye_pos.y, splinesPara[i][j].z-eye_pos.z); 
+					vec3 b (view_dir.x, view_dir.y, view_dir.z);   
+					double aDotb = Dot (a, b);
+					vec3 projection = aDotb*b;    
+
+					double targetLen = totalLength*a.Length()/projection.Length(); 
+					vec3 finalVec = targetLen*(a.Normalize());
+					vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]);  
+					vec3 P = finalPos; 
+
+					//find out x, y in the NDC coordinate 
+					double Sx = ((P[0] - M[0] + H[0] + V[0]) * V[1] - (P[1] - M[1] + H[1] + V[1])* V[0])/(2*H[0]*V[1] - 2*H[1]*V[0]); 
+					double Sy = ((P[0] - M[0] + H[0] + V[0]) * H[1] - (P[1] - M[1] + H[1] + V[1])* H[0])/(2*V[0]*H[1] - 2*V[1]*H[0]); 
+
+					//convert from NDC coordinate to 2D screen    
+					int xAxis = (int) (Sx*640 + 0.5);
+					int yAxis = (int) (Sy*480 + 0.5); 
+					if(((xAxis - thickness[i]) > 0)&&((xAxis + thickness[i]) < Image_Width) && ((yAxis - thickness[i]) > 0)&&((yAxis + thickness[i]) < Image_Height))
+					{
+						for(int k = 0; k < thickness[i]; k++)   
+						{
+							int getIndex = (yAxis + k)*Image_Width + (xAxis); 
+
+					     	int randThou = rand()%1000;
+							double randomNum = (double) (randThou/1000.00); 
+						
+							if(randomNum >= 0.15)
+							{
+								pixels[getIndex].r = color[i][0]*255;
+								pixels[getIndex].g = color[i][1]*255;
+								pixels[getIndex].b = color[i][2]*255; 
+							}else
+							{
+								pixels[getIndex].r = backgroundColorR; 
+								pixels[getIndex].g = backgroundColorG; 
+								pixels[getIndex].b = backgroundColorB; 
+							} 
+						}
+					}
+				}
+			}
+		} 
+
+		//update all the points in the maya render view port           
+		//MRenderView::updatePixels(0, Image_Height-1, 0, Image_Width-1, pixels);                    
+		MRenderView::updatePixels(0, Image_Width-1, 0, Image_Height-1, pixels);
+        delete [] pixels;
+		//
+        // Inform the Render View that we have completed rendering the entire image.      
+        //
+        if (MRenderView::endRender() != MS::kSuccess)
+        {
+                displayError( "OverCoat: error occured in endRender." );
+                return MS::kFailure;
+        }  
+
+		MString cmd = MString ("RenderViewWindow;");
+		MGlobal::executeCommand(cmd); 
+		   
+        return stat;
+
+}

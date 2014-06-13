@@ -1,0 +1,132 @@
+global proc getText ()
+{
+   float $th = `floatSliderGrp -q -v Thickness`;
+   float $tr = `floatSliderGrp -q -v Transparency`;
+   float $so = `floatSliderGrp -q -v strokeOffset`;
+   float $we = `floatSliderGrp -q -v Weight`;
+   float $le = `floatSliderGrp -q -v level`;
+ 
+   OverCoatCmd -thick $th -trans $tr -strok $so -weight $we -level $le; 
+     
+}  
+
+
+
+global proc getColorEditor()
+{
+    colorEditor;
+}  
+
+
+global proc sliderCallBackUI()
+{
+window -w 330 -h 500 -retain -title "OverCoat" sliderCallBackWin;
+columnLayout -adjustableColumn true;
+
+         frameLayout -label "Display Image" -collapsable true -borderStyle "etchedIn"; 
+               image -w 250 -h 250 -i "F:\CIS 660\test2.jpeg"; 
+          setParent ..;
+
+
+          frameLayout -label "Embeding Tool" -collapsable true -borderStyle "etchedIn"; 
+               columnLayout -columnAttach "both" 5 -rowSpacing 5 -columnWidth 100; 
+                    button -label "Level Set Tool";
+                    button -label "hair Tool";
+                    button -label "feather Tool"; 
+               setParent ..;
+          setParent ..;
+
+          frameLayout -label "Color Editor" -collapsable true -borderStyle "etchedIn"; 
+               columnLayout -columnAttach "both" 5 -rowSpacing 5 -columnWidth 100; 
+                    button -label "Color Editor" -command "getColorEditor";
+               setParent ..;
+          setParent ..;
+
+         frameLayout -label "Attribute" -collapsable true -borderStyle "etchedIn"; 
+               columnLayout -columnAttach "both" 5 -rowSpacing 5 -columnWidth 300; 
+                    floatSliderGrp -columnWidth 1 80 -label "Thickness"
+                    -field true
+                    -value 13
+                    -minValue 0.0 -maxValue 30.0 Thickness;
+                    floatSliderGrp -columnWidth 1 80 -label "Weight"
+                                        -field true
+                                        -value 13
+                                        -minValue 0.0 -maxValue 30.0 Weight;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Transparency"
+                                        -field true
+                                        -value 13
+                                        -minValue 1.0 -maxValue 30.0 Transparency;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Level"
+                                        -field true
+                                        -value 1
+                                        -minValue 0.0 -maxValue 10.0 level;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Stroke Offset"
+                                        -field true
+                                        -value 1
+                                        -minValue 0.0 -maxValue 10.0 strokeOffset;
+               setParent ..;
+          setParent ..;
+          
+  frameLayout -label "Brush Type" -collapsable true -collapse true 
+          -borderStyle "etchedIn"; 
+               gridLayout -numberOfColumns 4 -cellWidthHeight 80 20; 
+                    button -label "Brush Type 1";
+                    button -label "Brush Type 2";
+                    button -label "Brush Type 3";                                    
+                    button -label "Brush Type 4";
+
+                    button -label "Brush Type 5";
+                    button -label "Brush Type 6";
+                    button -label "Brush Type 7";                                    
+                    button -label "Brush Type 8";                                    
+setParent ..; 
+setParent ..;
+
+
+
+
+
+
+          frameLayout -label "Rendering" -collapsable true -borderStyle "etchedIn"; 
+               columnLayout -columnAttach "both" 5 -rowSpacing 5 -columnWidth 100; 
+                    button -label "Rendering" -command "getText";
+               setParent ..;
+          setParent ..;
+
+     setParent ..; 
+showWindow sliderCallBackWin;   
+}
+
+sliderCallBackUI();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+ 

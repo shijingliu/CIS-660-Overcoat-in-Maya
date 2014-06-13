@@ -1,0 +1,268 @@
+#include "OverCoatCmd.h"
+
+#include <maya/MGlobal.h>
+#include <math.h>
+
+#include <maya/MArgList.h>
+#include <maya/MTime.h>
+#include <maya/MMatrix.h>
+#include <maya/MFnMesh.h>
+#include <maya/MFloatMatrix.h>
+#include <maya/MFnMeshData.h>
+#include <maya/MPointArray.h>
+#include <maya/MItDependencyNodes.h>
+#include <maya/MItMeshPolygon.h>
+#include <maya/MItMeshEdge.h>
+#include <maya/MItDag.h>
+#include <maya/MFnCamera.h>
+#include <maya/MFnTransform.h>
+#include <maya/MSelectionList.h>
+#include <maya/MItSelectionList.h>
+#include <maya/MUintArray.h>
+#include <maya/MFloatPoint.h>
+#include <maya/MDagPath.h>
+#include <maya/MFnNurbsCurve.h>
+#include <maya/MItCurveCV.h>
+
+#include <list>
+#include "vec.h"
+#include <vector>
+#include "OverCoatCmd.h"
+#include "PointProjection.h"
+
+#include "EasyBMP.h"
+
+OverCoatCmd::OverCoatCmd() : MPxCommand()
+{
+}
+
+OverCoatCmd::~OverCoatCmd() 
+{
+}
+
+MStatus OverCoatCmd::doIt( const MArgList& args )
+{
+	MGlobal::displayInfo(MString("Creating Overcoat Node"));
+	MStatus stat = MS::kSuccess;  
+
+	int thickNess = 2; 
+	double weight = 1.0; 
+	double strokeOffset = 25.7f; 
+	double transparency = 1; 
+	double level = 1;
+
+	int brushflag = 0; 
+
+    //loop through the command line arguments   
+	for(int i = 0; i < args.length(); ++i)
+	{
+		//check for a valid arguments 
+		if(args.asString(i, &stat) == "-thick")
+		{
+			MString para1 = args.asString(++i); 
+			thickNess = para1.asDouble(); 
+		}
+		if(args.asString(i, &stat) == "-weight")
+		{
+			MString para2 = args.asString(++i);
+			weight = para2.asDouble();
+		}
+		if(args.asString(i, &stat) == "-strok")
+		{
+			MString para3 = args.asString(++i);
+			strokeOffset = para3.asDouble();
+		}
+		if(args.asString(i, &stat) == "-trans")
+		{
+			MString para4 = args.asString(++i);
+			transparency = para4.asDouble(); 
+		}
+	    if(args.asString(i, &stat) == "-level")
+		{
+			MString para5 = args.asString(++i);
+			level = para5.asDouble(); 
+		}
+		if(args.asString(i, &stat) == "-brushflag")
+		{
+			MString para6 = args.asString(++i);
+			brushflag = para6.asInt(); 
+		}
+	}
+
+	
+	//get the view direction and eye position of 
+	MFloatVector view_dir; 
+	MFloatPoint eye_pos;
+	MItDag it1(MItDag::kDepthFirst, MFn::kCamera); 
+	MFloatMatrix projectionMat; 
+
+	//some declaration about bspline 
+    int degree = 0; 
+	int knots = 0; 
+
+    for ( ; !it1.isDone(); it1.next() )
+    {
+        MDagPath campath;
+		it1.getPath(campath); 
+        MFnCamera fn(campath);
+	
+		MString persp = "perspShape"; 
+		if(fn.name()==persp)
+		{
+			view_dir=MFloatVector(fn.viewDirection(MSpace::kWorld));
+			eye_pos=MFloatPoint(fn.eyePoint(MSpace::kWorld)); 
+		}
+    }
+	//cout<<"view direction:"<<view_dir.x<<" "<<view_dir.y<<" "<<view_dir.z<<endl; 
+   // cout<<"eye position:"<<eye_pos.x<<" "<<eye_pos.y<<" "<<eye_pos.z<<endl;   
+
+	//get the first selected curve from the selection list.     
+	MItDag it(MItDag::kDepthFirst, MFn::kNurbsCurve);
+
+	int index = 0; 
+	vector <int> numCVs(5); 
+	vector <vec2> points (100000); 
+	MPointArray testArray (100000, MPoint::origin); 
+	MPointArray testPara (100000, MPoint::origin); 
+	MPoint StartPoint, EndPoint;
+	double StartPara =0;
+	double EndPara =0; 
+	int array[10]; 
+
+	for ( ; !it.isDone(); it.next() )   
+    {
+        MDagPath curvepath;
+		it.getPath(curvepath); 
+
+		//definition for curves      
+		MFnNurbsCurve curveFn (curvepath); 
+		numCVs[index] = curveFn.numCVs();
+		curveFn.getCVs (testArray, MSpace::kObject);
+
+		for(int i=0; i < testArray.length(); i++)
+		{
+		}
+		int LEN = testArray.length(); 
+		StartPoint = testArray[0]; 
+		EndPoint = testArray[LEN-1];    
+
+		curveFn.getParamAtPoint(StartPoint, StartPara, MSpace::kObject); 
+		curveFn.getParamAtPoint(EndPoint, EndPara, MSpace::kObject); 
+
+		int arrIndex = 0; 
+		for (double u = StartPara; u <=EndPara; u = u+0.001)
+		{
+			MPoint testPoint;
+			curveFn.getPointAtParam(u, testPoint, MSpace::kObject); 
+			testPara[arrIndex].x= testPoint.x; 
+			testPara[arrIndex].y= testPoint.y;     
+			testPara[arrIndex].z= testPoint.z;   
+			arrIndex++;   
+		}    
+	index++; 
+   }
+
+	/*
+	cout<<endl; 
+	cout<<"camera:"<<eye_pos.x<<","<<eye_pos.y<<","<<eye_pos.z<<endl; 
+	cout<<"view_direction:"<<view_dir.x<<","<<view_dir.y<<","<<view_dir.z<<endl; 
+
+	cout<<endl; 
+	cout<<endl; 
+	cout<<"index:"<<index<<endl; 
+	cout<<"this is all about the selective points:"<<endl; 
+	for(int i = 0; i<index; i++)
+	{
+		cout<<"number of curves "<<(i+1)<<":"<<numCVs[i]<<endl; 
+		for(int j = 0; j<testArray.length(); j++)
+		{
+			cout<<"testarray "<<j<<" :"<<testArray[j].x<<","<<testArray[j].y<<","<<testArray[j].z<<endl;    
+		}
+	}
+
+	cout<<endl; 
+	cout<<endl; 
+	cout<<"this is all about the parameter points:"<<endl; 
+	cout<<"startPoint:"<<StartPoint.x<<","<<StartPoint.y<<","<<StartPoint.z<<endl;
+	cout<<"endPoint:"<<EndPoint.x<<","<<EndPoint.y<<","<<EndPoint.z<<endl;
+	cout<<endl; 
+	cout<<"startPara:"<<StartPara<<endl; 
+	cout<<"endPara:"<<EndPara<<endl; 
+    cout<<endl; 
+    cout<<endl;
+
+	for(int i = 0; i<index; i++)
+	{
+		for(int j = 0; j<(1000*EndPara+1); j++)
+		{
+			cout<<"testPara "<<j<<" :"<<testPara[j].x<<","<<testPara[j].y<<","<<testPara[j].z<<endl;    
+		}
+	}*/
+	
+	BMP output; 
+	output.SetSize(640, 480); 
+	output.SetBitDepth(24);
+	double totalLength = 200.0; 
+
+	for(int i = -320; i < 320; ++i)    
+	{
+		for (int j = -240; j < 240; ++j)
+		{
+			output(i+320, j+240)->Red = 255; 
+			output(i+320, j+240)->Blue = 255; 
+			output(i+320, j+240)->Green = 255;  
+		}
+	}
+	int pointsIndex = 0; 
+	if(brushflag == 0)
+	{
+		for(int i = 0; i<index; i++)
+		{
+			for(int j = 0; j<(1000*EndPara+1); j++)   
+			{
+				vec3 a (testPara[j].x-eye_pos.x, testPara[j].y-eye_pos.y, testPara[j].z-eye_pos.z); 
+				vec3 b (view_dir.x, view_dir.y, view_dir.z); 
+				double aDotb = Dot (a, b);
+				vec3 projection = aDotb*b;    
+
+				double targetLen = totalLength*a.Length()/projection.Length(); 
+				vec3 finalVec = targetLen*(a.Normalize());
+				vec3 finalPos = vec3 (eye_pos.x + finalVec[0], eye_pos.y + finalVec[1], eye_pos.z + finalVec[2]); 
+				int xAxis = (int) (finalPos[0]+0.5); 
+				int yAxis = (int) (finalPos[1]+0.5); 
+
+				if((xAxis > -320)&&(xAxis < 320) && (yAxis > -240)&&(yAxis < 240))
+				{  
+					points[pointsIndex][0] = xAxis; 
+					points[pointsIndex][1] = yAxis; 
+					pointsIndex++; 
+					//cout<<"points[j][0]:"<<points[j][0]<<","<<"points[j][1]:"<<points[j][1]<<endl;     
+					output(xAxis+320, 239-yAxis)->Red = 0; 
+					output(xAxis+320, 239-yAxis)->Blue = 0; 
+					output(xAxis+320, 239-yAxis)->Green = 0;  
+
+					output(xAxis+320, 239-yAxis +1)->Red = 0; 
+					output(xAxis+320, 239-yAxis +1)->Blue = 0; 
+					output(xAxis+320, 239-yAxis +1)->Green = 0;  
+
+					output(xAxis+320, 239-yAxis -1)->Red = 0; 
+					output(xAxis+320, 239-yAxis -1)->Blue = 0; 
+					output(xAxis+320, 239-yAxis -1)->Green = 0;  
+				}
+			}
+		}   
+	}
+
+	cout<<endl; 
+	cout<<endl; 
+	cout<<"points size:"<<pointsIndex<<endl;
+	cout<<endl;
+	cout<<endl;    
+
+	output.WriteToFile("C:\\CIS 660\\Overcoat in Maya\\test1.bmp");
+	///PointProjection PP; 
+	//PP.ThreeDtoTwoD();    
+
+	//cout<<"number of curves:"<<numCVs<<endl;   
+    return MStatus::kSuccess;
+}

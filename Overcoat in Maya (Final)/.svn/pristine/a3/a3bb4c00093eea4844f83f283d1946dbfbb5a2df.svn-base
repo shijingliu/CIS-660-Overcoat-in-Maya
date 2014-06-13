@@ -1,0 +1,69 @@
+//PROCEDURES SETUP
+
+//SHELF SETUP
+global string $gShelfTopLevel;
+int $overcoatShelfIndex;
+string $shelves[] = `tabLayout -q -childArray $gShelfTopLevel`;
+int $foundExistingShelf = 0;
+
+int $i = 0;
+for($i = 0; $i < size($shelves); $i++){
+	if( $shelves[$i] == "Overcoat" ){
+		$overcoatShelfIndex = $i;
+		$foundExistingShelf = 1;
+	}
+}
+
+if( $foundExistingShelf == 0){
+	addNewShelfTab "Overcoat";
+	$overcoatShelfIndex = size($shelves) + 1;
+}
+
+string $buttons[] = `shelfLayout -q -childArray "Overcoat"`;
+int $foundHairToolButton = 0;
+int $foundLevelToolButton = 0;
+int $foundRenderButton = 0;
+string $label;
+
+for($i = 0; $i < size($buttons); $i++){
+	$label = "Hair Tool";
+	if( $label == `shelfButton -q -label $buttons[$i]`){
+		$foundHairToolButton = 1;
+	}
+	$label = "Level Set Tool";
+	if( $label == `shelfButton -q -label $buttons[$i]`){
+		$foundLevelToolButton = 1;
+	}
+	$label = "Render Button";
+	if( $label == `shelfButton -q -label $buttons[$i]`){
+		$foundRenderButton = 1;
+	}
+}
+
+//BUTTON SETUP
+
+setParent $shelves[$overcoatShelfIndex];
+	if($foundHairToolButton == 0){
+		//if (`optionVar -exists HairToolContextName` == 0){
+			string $HairToolContextName = `eval "HairToolContext"`;
+			string $HairToolButtonName = `toolButton -doubleClickCommand "toolPropertyWindow" 
+							-p "Overcoat" 
+							-t $HairToolContextName
+							-i1  "commandButton.png"`;
+			//optionVar -sv HairToolContextName $HairToolContextName -sv HairToolButtonName $HairToolButtonName;
+		//}
+	}
+	if($foundLevelToolButton == 0){
+		//if (`optionVar -exists LevelToolContextName` == 0){
+			string $LevelToolContextName = `eval "LevelToolContext"`;
+			string $LevelToolButtonName = `toolButton -doubleClickCommand "toolPropertyWindow" 
+							-p "Overcoat" 
+							-t $LevelToolContextName
+							-i1  "commandButton.png"`;
+			//optionVar -sv HairToolContextName $HairToolContextName -sv HairToolButtonName $HairToolButtonName;
+		//}
+	}
+	if($foundRenderButton == 0){
+		shelfButton -image1 "commandButton.png" -label "Render" -annotation "Render Strokes" -command "OverCoatCmd -thick 25 -trans 1.0 -strok 200 -weight 0 -level 0 -red 255.0 -green 0.0 -blue 0.0";
+	}
+

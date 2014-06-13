@@ -1,0 +1,47 @@
+global proc overcoatHairToolValuesSetColor(string $tool, string $flag, string $control)
+{
+	if (`colorSliderGrp -exists $control` &&
+		`HairToolContext -exists $tool`)
+	{
+		string $cmd = ("colorSliderGrp -q -rgb " + $control);
+
+		float $color[] = eval($cmd);
+
+		$cmd = ("HairToolContext -edit -" + $flag);
+		$cmd += (" " + $color[0]);
+		$cmd += (" " + $color[1]);
+		$cmd += (" " + $color[2]);
+		$cmd += (" " + $tool);
+
+		eval $cmd;
+	}
+}
+
+global proc overcoatHairToolValues ( string $toolName ) {
+	print "Values being called\n";
+
+	string $parent = (`toolPropertyWindow -q -location` + "|overcoatHairTool");
+	setParent $parent;
+	
+	string $cmd;
+	float $color[] = `HairToolContext -q -color $toolName`;
+	$cmd = ("overcoatHairToolValuesSetColor \"" + $toolName + "\" \"color\" \"hairToolColorSlider\"");
+	colorSliderGrp -edit -rgbValue $color[0] $color[1] $color[2] 
+			-changeCommand ($cmd)
+			hairToolColorSlider;
+			
+	float $thickValueSlider = `floatSliderGrp -q -v hairToolThickness`;
+	floatSliderGrp -e
+		-value `HairToolContext -q -thickness $toolName`
+		-changeCommand ("HairToolContext -edit -thickness #1 " + $toolName)
+		hairToolThickness;
+		
+	float $transValueSlider = `floatSliderGrp -q -v hairToolTransparency`;
+	floatSliderGrp -e
+		-value `HairToolContext -q -transparency $toolName`
+		-changeCommand ("HairToolContext -edit -transparency #1 " + $toolName)
+		hairToolTransparency;
+
+	string $helpTag = "HairTool";
+	toolPropertySelect "overcoatHairTool";
+}

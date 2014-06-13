@@ -1,0 +1,39 @@
+﻿Build started 5/2/2012 5:43:31 PM.
+     1>Project "C:\CIS 660\Overcoat in Maya (previous version)\MyPlugin.vcxproj" on node 2 (build target(s)).
+     1>InitializeBuildStatus:
+         Creating "x64\Debug\OverCoat.unsuccessfulbuild" because "AlwaysCreate" was specified.
+       ClCompile:
+         c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\CL.exe /c /I"C:\Program Files\Autodesk\Maya2012\include" /Zi /nologo /W3 /WX- /Od /D _DEBUG /D WIN32 /D _WINDOWS /D NT_PLUGIN /D REQUIRE_IOSTREAM /D _VC80_UPGRADE=0x0710 /D _WINDLL /Gm- /EHa /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Fo".Debug/" /Fd".\Debug/MyPlugin.pdb" /Gd /TP /wd4244 /wd4305 /wd4018 /errorReport:prompt OverCoatCmd.cpp /GR /GS /EHac 
+         OverCoatCmd.cpp
+       ManifestResourceCompile:
+         c:\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\bin\rc.exe /nologo /fo"x64\Debug\OverCoat.mll.embed.manifest.res" x64\Debug\OverCoat_manifest.rc 
+     1>C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\Microsoft.CppBuild.targets(990,5): warning MSB8012: TargetPath(C:\CIS 660\Overcoat in Maya (previous version)\x64\Debug\OverCoat.mll) does not match the Linker's OutputFile property value (C:\CIS 660\Overcoat in Maya (previous version)\OverCoatd.mll). This may cause your project to build incorrectly. To correct this, please make sure that $(OutDir), $(TargetName) and $(TargetExt) property values match the value specified in %(Link.OutputFile).
+     1>C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\Microsoft.CppBuild.targets(992,5): warning MSB8012: TargetName(OverCoat) does not match the Linker's OutputFile property value (OverCoatd). This may cause your project to build incorrectly. To correct this, please make sure that $(OutDir), $(TargetName) and $(TargetExt) property values match the value specified in %(Link.OutputFile).
+       Link:
+         c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\link.exe /ERRORREPORT:PROMPT /OUT:".\OverCoatd.mll" /INCREMENTAL /NOLOGO /LIBPATH:"C:\Program Files\Autodesk\Maya2012\lib" odbc32.lib odbccp32.lib OpenMaya.lib OpenMayaRender.lib Foundation.lib OpenMayaUI.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /ManifestFile:"x64\Debug\OverCoat.mll.intermediate.manifest" /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /DEBUG /PDB:".\Debug/MyPlugin.pdb" /SUBSYSTEM:WINDOWS /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:".\Debug/MyPlugin.lib" /MACHINE:X64 /DLL x64\Debug\OverCoat.mll.embed.manifest.res
+         .Debug/EasyBMP.obj
+         .Debug/FeatherContextCommand.obj
+         .Debug/FeatherToolContext.obj
+         .Debug/HairToolContext.obj
+         .Debug/HairContextCommand.obj
+         .Debug/LevelContextCommand.obj
+         .Debug/LevelToolContext.obj
+         .Debug/OverCoatCmd.obj
+         .Debug/OverCoatNode.obj
+         .Debug/PluginMain.obj
+         .Debug/vec.obj /export:initializePlugin /export:uninitializePlugin  
+         MyPlugin.vcxproj -> C:\CIS 660\Overcoat in Maya (previous version)\x64\Debug\OverCoat.mll
+       Manifest:
+         c:\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\bin\mt.exe /nologo /verbose /out:"x64\Debug\OverCoat.mll.embed.manifest" /manifest x64\Debug\OverCoat.mll.intermediate.manifest
+         All outputs are up-to-date.
+       LinkEmbedManifest:
+         All outputs are up-to-date.
+         MyPlugin.vcxproj -> C:\CIS 660\Overcoat in Maya (previous version)\x64\Debug\OverCoat.mll
+       FinalizeBuildStatus:
+         Deleting file "x64\Debug\OverCoat.unsuccessfulbuild".
+         Touching "x64\Debug\OverCoat.lastbuildstate".
+     1>Done Building Project "C:\CIS 660\Overcoat in Maya (previous version)\MyPlugin.vcxproj" (build target(s)).
+
+Build succeeded.
+
+Time Elapsed 00:00:04.24

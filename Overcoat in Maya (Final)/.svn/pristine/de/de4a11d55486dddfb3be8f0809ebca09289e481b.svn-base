@@ -1,0 +1,54 @@
+global proc overcoatHairToolProperties (){
+	print "Calling Properties\n";
+
+	string $parent = `toolPropertyWindow -q -location`;
+	setParent $parent;
+
+	setUITemplate -pushTemplate OptionsTemplate;
+
+	columnLayout overcoatHairTool;
+         frameLayout -label "Attribute" -collapsable true -collapse false  -borderStyle "etchedIn"; 
+               columnLayout -columnAttach "both" 5 -rowSpacing 5 -columnWidth 300; 
+		    colorSliderGrp -l "Brush Color" hairToolColorSlider;
+                    floatSliderGrp -columnWidth 1 80 -label "Thickness"
+                    			-field true
+                    			-value 13
+                    			-minValue 1.0 -maxValue 30.0 hairToolThickness;
+                    floatSliderGrp -columnWidth 1 80 -label "Weight"
+                                        -field true
+                                        -value 13
+                                        -minValue 1.0 -maxValue 30.0 hairToolWeight;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Transparency"
+                                        -field true
+                                        -value 13
+                                        -minValue 0.0 -maxValue 1.0 hairToolTransparency;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Level"
+                                        -field true
+                                        -value 1
+                                        -minValue 0.0 -maxValue 10.0 hairToollevel;
+                    
+                    floatSliderGrp -columnWidth 1 80 -label "Stroke Offset"
+                                        -field true
+                                        -value 1
+                                        -minValue 0.0 -maxValue 10.0 hairToolstrokeOffset;
+               setParent ..;
+         setParent ..;
+          
+	frameLayout -label "Brush Type" -collapsable true -collapse false 
+          -borderStyle "etchedIn"; 
+               gridLayout -numberOfColumns 4 -cellWidthHeight 80 20; 
+                    button -label "Brush Type 1";
+                    button -label "Brush Type 2";
+                    button -label "Brush Type 3";                                    
+                    button -label "Brush Type 4";
+
+                    button -label "Brush Type 5";
+                    button -label "Brush Type 6";
+                    button -label "Brush Type 7";                                    
+                    button -label "Brush Type 8";                                    
+	setParent ..; 
+setParent ..;
+setUITemplate -popTemplate;
+}

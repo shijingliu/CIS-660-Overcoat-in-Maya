@@ -1,0 +1,46 @@
+#ifndef CreateOverCoatCmd_H_
+#define CreateOverCoatCmd_H_
+
+#include <maya/MPxCommand.h>
+#include <string>
+#include "vec.h"
+
+/*
+#include <math.h>
+
+#include <maya/MFnNurbsCurve.h>
+#include <maya/MPointArray.h>
+#include <maya/MDoubleArray.h>
+#include <maya/MPoint.h>
+#include <maya/MSelectionList.h>
+#include <maya/MItSelectionList.h>
+#include <maya/MItCurveCV.h>
+#include <maya/MGlobal.h>
+#include <maya/MDagPath.h>
+#include <maya/MString.h>
+*/
+
+/*
+class OverCoatCmd : public MPxCommand
+{
+public:
+    OverCoatCmd();
+    virtual ~OverCoatCmd();
+    static void* creator() { return new OverCoatCmd(); }
+    MStatus doIt( const MArgList& args );
+
+};
+*/
+
+
+class OverCoatCmd : public MPxCommand
+{
+public:
+    OverCoatCmd();
+    virtual ~OverCoatCmd();
+    static void* creator() { return new OverCoatCmd(); }
+    MStatus doIt( const MArgList& args );
+
+};
+
+#endif

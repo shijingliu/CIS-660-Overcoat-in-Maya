@@ -1,0 +1,19 @@
+#ifndef OverCoatCmd_H_
+#define OverCoatCmd_H_
+
+#include <maya/MPxCommand.h>
+#include <string>
+#include "vec.h"
+
+class OverCoatCmd : public MPxCommand 
+{                                                       
+public:                                 
+        OverCoatCmd() {};
+        ~OverCoatCmd() {}; 
+        virtual MStatus doIt ( const MArgList& );      
+        static void*    creator() {return new OverCoatCmd();};
+
+};
+
+
+#endif

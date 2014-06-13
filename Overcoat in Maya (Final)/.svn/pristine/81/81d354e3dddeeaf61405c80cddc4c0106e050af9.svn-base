@@ -1,0 +1,57 @@
+global proc overcoatLevelToolValuesSetColor(string $tool, string $flag, string $control)
+{
+	if (`colorSliderGrp -exists $control` &&
+		`LevelToolContext -exists $tool`)
+	{
+		string $cmd = ("colorSliderGrp -q -rgb " + $control);
+
+		float $color[] = eval($cmd);
+
+		$cmd = ("LevelLevelContext -edit -" + $flag);
+		$cmd += (" " + $color[0]);
+		$cmd += (" " + $color[1]);
+		$cmd += (" " + $color[2]);
+		$cmd += (" " + $tool);
+
+		eval $cmd;
+	}
+}
+
+global proc overcoatLevelToolValues ( string $toolName ) {
+	int $valNumOfBrushes = 16; //Number of brushes + 1;
+	string $parent = (`toolPropertyWindow -q -location` + "|overcoatLevelTool");
+	setParent $parent;
+	
+	string $cmd;
+	float $color[] = `LevelToolContext -q -color $toolName`;
+	$cmd = ("overcoatLevelToolValuesSetColor \"" + $toolName + "\" \"color\" \"LevelToolColorSlider\"");
+	colorSliderGrp -edit -rgbValue $color[0] $color[1] $color[2] 
+			-changeCommand ($cmd)
+			LevelToolColorSlider;
+			
+	floatSliderGrp -e
+		-value `LevelToolContext -q -thickness $toolName`
+		-changeCommand ("LevelToolContext -edit -thickness #1 " + $toolName)
+		LevelToolThickness;
+		
+	floatSliderGrp -e
+		-value `LevelToolContext -q -transparency $toolName`
+		-changeCommand ("LevelToolContext -edit -transparency #1 " + $toolName)
+		LevelToolTransparency;
+
+	floatSliderGrp -e
+		-value `LevelToolContext -q -level $toolName`
+		-changeCommand ("LevelToolContext -edit -level #1 " + $toolName)
+		LevelToolLevelSet;
+		
+	image -e -image ("overcoat_Images/type" + `LevelToolContext -q -brush $toolName` + ".bmp") currentBrush;
+		
+	for($i = 1; $i < $valNumOfBrushes; $i++){
+        	string $label = "brushButton" + $i;
+               	symbolButton -e -command ("HairToolContext -edit -brush " + $i + " " + $toolName) $label;
+        }
+
+	string $helpTag = "LevelTool";
+	toolPropertySelect "overcoatLevelTool";
+	
+}

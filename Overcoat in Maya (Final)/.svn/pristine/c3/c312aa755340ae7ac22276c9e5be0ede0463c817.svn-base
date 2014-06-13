@@ -1,0 +1,311 @@
+#include "HairToolContext.h"
+#include <maya/MPxContext.h>
+#include <maya/MFnNumericAttribute.h>
+#include <maya/MFnUnitAttribute.h>
+#include <maya/MFnTypedAttribute.h>
+#include <maya/MGlobal.h>
+#include <maya/MFnCamera.h>
+#include <maya/MDagPath.h>
+#include <maya/MFnMesh.h>
+#include <maya/MPointArray.h>
+#include <maya/MFloatPoint.h>
+#include <maya/MItDag.h>
+#include <stdio.h>
+#include <maya/MToolsInfo.h>
+
+int HairToolContext::numOfSplinesCreated = 0;
+
+HairToolContext::HairToolContext(){
+	setTitleString("Hair Tool");
+}
+
+HairToolContext::~HairToolContext(){
+
+}
+
+void HairToolContext::toolOnSetup(MEvent& event){
+	// set the help text in the maya help boxs
+	setHelpString("Overcoat Hair Tool" );
+	intersectionFound = false;
+	red = 0.0f;
+	green = 0.0f;
+	blue = 0.0f;
+	thick = 15.0f;
+	brush = 0;
+	transparency = 1.0;
+
+}
+
+void HairToolContext::getClassName(MString& name) const{
+	name.set("overcoatHairTool");
+}
+
+MStatus HairToolContext::doPress( MEvent& event )
+ {
+	// if we have a left mouse click
+	if(event.mouseButton() == MEvent::kLeftMouse)
+	{
+		//Our Viewer
+		m_View = M3dView::active3dView();
+
+		//Get Screen click position
+		event.getPosition( m_storage[0], m_storage[1] );
+		//char buffer[200];
+		//sprintf(buffer, "print \"%i, %i\\n\"", m_storage[0], m_storage[1]);
+		//MGlobal::executeCommand(buffer);
+
+		//Camera stuff
+		MPoint origin = MPoint();
+		MVector direction = MVector();
+		m_View.viewToWorld(m_storage[0], m_storage[1], origin, direction);
+
+		//Iterate through meshes in scene
+		bool intersection = false;
+		MPointArray points =  MPointArray();
+		MIntArray* polygonIds = new MIntArray();
+		MItDag dagIter = MItDag(MItDag::kBreadthFirst, MFn::kInvalid);
+		for( ; !dagIter.isDone(); dagIter.next() ){
+			MDagPath dagPath;
+			dagIter.getPath(dagPath);
+			MFnDagNode dagNode( dagPath);
+
+			//Object cannot be intermediate, it must be a mesh
+			if( dagNode.isIntermediateObject() ) continue;
+			if( !dagPath.hasFn(MFn::kMesh) ) continue;
+			if( dagPath.hasFn(MFn::kTransform) ) continue;
+
+			MGlobal::executeCommand(MString("print \"node is a mesh \\n\""));
+
+			MFnMesh mesh(dagPath);
+			points =  MPointArray();
+			polygonIds = new MIntArray();
+			intersection = mesh.intersect(origin, direction, points, 1e-010, MSpace::kWorld, polygonIds);
+			
+			if(intersection){
+				break;
+			}
+		}
+		
+		if(intersection){
+			intersectionFound = true;
+			//Calculate Tvalue
+			tValue = (points[0].x - origin.x)/direction.x;
+			//pushback point
+			splinePoints = vector<MPoint>();
+			splinePoints.push_back(MPoint(points[0].x, points[0].y, points[0].z, points[0].w));
+		}
+		else{
+			intersectionFound = false;
+			MGlobal::executeCommand("print \" No Intersection \\n\"");
+		}
+
+		// yay!
+		return MS::kSuccess;
+	}
+
+	// just let the base class handle the event*/
+	return MPxContext::doPress(event);
+ }
+
+MStatus HairToolContext::doDrag( MEvent& event )
+ {
+	 if(intersectionFound){
+		 //Our Viewer
+		m_View = M3dView::active3dView();
+
+		//Get Screen click position
+		event.getPosition( m_storage[0], m_storage[1] );
+		//char buffer[200];
+		//sprintf(buffer, "print \"%i, %i\\n\"", m_storage[0], m_storage[1]);
+		//MGlobal::executeCommand(buffer);
+
+		//Camera stuff
+		MPoint origin = MPoint();
+		MVector direction = MVector();
+		m_View.viewToWorld(m_storage[0], m_storage[1], origin, direction);
+
+		//Iterate through meshes in scene
+		bool intersection = false;
+		MPointArray points =  MPointArray();
+		MIntArray* polygonIds = new MIntArray();
+		MItDag dagIter = MItDag(MItDag::kBreadthFirst, MFn::kInvalid);
+		for( ; !dagIter.isDone(); dagIter.next() ){
+			MDagPath dagPath;
+			dagIter.getPath(dagPath);
+			MFnDagNode dagNode( dagPath);
+
+			//Object cannot be intermediate, it must be a mesh
+			if( dagNode.isIntermediateObject() ) continue;
+			if( !dagPath.hasFn(MFn::kMesh) ) continue;
+			if( dagPath.hasFn(MFn::kTransform) ) continue;
+
+			MFnMesh mesh(dagPath);
+			points =  MPointArray();
+			polygonIds = new MIntArray();
+			intersection = mesh.intersect(origin, direction, points, 1e-010, MSpace::kWorld, polygonIds);
+			
+			if(intersection){
+				break;
+			}
+		}
+		
+		if(intersection){
+			intersectionFound = true;
+			//Calculate Tvalue
+			float newtValue = (points[0].x - origin.x)/direction.x;
+			if(newtValue < tValue){
+				tValue = newtValue;
+				splinePoints.push_back(MPoint(points[0].x, points[0].y, points[0].z, points[0].w));
+			}
+			else{
+				MPoint point = origin + tValue*direction;
+				splinePoints.push_back(point);
+			}
+		}
+		else{
+			MPoint point = origin + tValue*direction;
+			splinePoints.push_back(point);
+		}
+
+		
+	 }
+	/*// if we have a left mouse click, start the selection of
+	// our rectangular region
+	//
+	if(m_IsSelecting)
+	{
+		// get the new location of the cursor
+		event.getPosition( m_End[0], m_End[1] );
+
+		// to draw the selection rectangle within maya, we need to
+		// draw a custom overlay in the viewport in which the tool
+		// is being used.
+		//
+		// This means we have to begin and end the rendering of an overlay
+		// between which we can include all that we want to draw
+		//
+		m_View.beginOverlayDrawing();
+
+			// clear the overlay planes
+			m_View.clearOverlayPlane();
+
+			// Set up the orthographic projection matix
+			glMatrixMode( GL_PROJECTION );
+			glLoadIdentity();
+			gluOrtho2D( 0.0f, m_View.portWidth(),
+						0.0f, m_View.portHeight() );
+			glMatrixMode( GL_MODELVIEW );
+			glLoadIdentity();
+
+			// Set line width
+			glLineWidth( 1.0 );
+
+			// Draw  rectangle
+			glBegin( GL_LINE_LOOP );
+				glVertex2i( m_Start[0], m_Start[1] );
+				glVertex2i( m_End[0], m_Start[1] );
+				glVertex2i( m_End[0], m_End[1] );
+				glVertex2i( m_Start[0], m_End[1] );
+			glEnd();
+
+		// done drawing our overlay on the viewport
+		m_View.endOverlayDrawing();
+	}
+
+	// just let the base class handle the event*/
+	 return MPxContext::doDrag(event);
+ }
+
+MStatus HairToolContext::doRelease( MEvent& event )
+ {
+	// only bother handling the release of a left mouse button.
+	if(event.mouseButton() != MEvent::kLeftMouse) {
+		return MPxContext::doRelease(event);
+	}
+	else if(!intersectionFound){
+		return MPxContext::doRelease(event);
+	}
+
+	numOfSplinesCreated++;
+	MGlobal::executeCommand("print \" Intersection Detected \\n\"");
+
+	char curveCreation[4000];
+	sprintf(curveCreation, "curve -name OverCoatSpline%d", numOfSplinesCreated);
+	for(int i = 0; i < splinePoints.size(); i++){
+		char buffer[200];
+		sprintf(buffer, " -p %f %f %f", splinePoints[i].x, splinePoints[i].y, splinePoints[i].z);
+		strcat(curveCreation, buffer);
+
+	}
+	MGlobal::executeCommand(curveCreation);
+
+	char overCoatNodeCreation[200];
+	sprintf(overCoatNodeCreation, "createNode OverCoatNode -name OverCoatNode%d", numOfSplinesCreated);
+	MGlobal::executeCommand(overCoatNodeCreation);
+
+	char overCoatNodeSetAttrColor[200];
+	sprintf(overCoatNodeSetAttrColor, "setAttr OverCoatNode%d.color -type \"double3\" %f %f %f", numOfSplinesCreated, red, green, blue);
+	MGlobal::executeCommand(overCoatNodeSetAttrColor);
+
+	char overCoatNodeSetAttrThick[200];
+	sprintf(overCoatNodeSetAttrThick, "setAttr OverCoatNode%d.thick %f", numOfSplinesCreated, thick);
+	MGlobal::executeCommand(overCoatNodeSetAttrThick);
+
+	char overCoatNodeSetAttrBrush[200];
+	sprintf(overCoatNodeSetAttrBrush, "setAttr OverCoatNode%d.brush %d", numOfSplinesCreated, brush);
+	MGlobal::executeCommand(overCoatNodeSetAttrBrush);
+
+	char overCoatNodeSetAttrTrans[200];
+	sprintf(overCoatNodeSetAttrTrans, "setAttr OverCoatNode%d.transparency %f", numOfSplinesCreated, transparency);
+	MGlobal::executeCommand(overCoatNodeSetAttrTrans);
+
+	char overCoatNodeSetAttr[200];
+	sprintf(overCoatNodeSetAttr, "connectAttr (OverCoatNode%d.spline) (OverCoatSpline%d.)", numOfSplinesCreated, numOfSplinesCreated);
+	//MGlobal::executeCommand(overCoatNodeSetAttr);	
+
+	return MS::kSuccess;
+}
+
+void HairToolContext::setRedColor(float input){
+	red = input;
+	MToolsInfo::setDirtyFlag(*this);
+}
+void HairToolContext::setGreenColor(float input){
+	green = input;
+	MToolsInfo::setDirtyFlag(*this);
+}
+void HairToolContext::setBlueColor(float input){
+	blue = input;
+	MToolsInfo::setDirtyFlag(*this);
+}
+void HairToolContext::setThick(float input){
+	thick = input;
+	MToolsInfo::setDirtyFlag(*this);
+}
+void HairToolContext::setBrush(int input){
+	brush = input;
+	MToolsInfo::setDirtyFlag(*this);
+}
+void HairToolContext::setTransparency(float input){
+	transparency = input;
+	MToolsInfo::setDirtyFlag(*this);
+}
+
+float HairToolContext::getRedColor(){
+	return red;
+}
+float HairToolContext::getGreenColor(){
+	return green;
+}
+float HairToolContext::getBlueColor(){
+	return blue;
+}
+float HairToolContext::getThick(){
+	return thick;
+}
+int HairToolContext::getBrush(){
+	return brush;
+}
+float HairToolContext::getTransparency(){
+	return transparency;
+}

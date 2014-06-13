@@ -1,0 +1,276 @@
+#include "OverCoatCmd.h"
+
+#include <maya/MGlobal.h>
+#include <math.h>
+
+#include <maya/MArgList.h>
+#include <maya/MTime.h>
+#include <maya/MMatrix.h>
+#include <maya/MFnMesh.h>
+#include <maya/MFloatMatrix.h>
+#include <maya/MFnMeshData.h>
+#include <maya/MPointArray.h>
+#include <maya/MItDependencyNodes.h>
+#include <maya/MItMeshPolygon.h>
+#include <maya/MItMeshEdge.h>
+#include <maya/MItDag.h>
+#include <maya/MFnCamera.h>
+#include <maya/MFnTransform.h>
+#include <maya/MSelectionList.h>
+#include <maya/MItSelectionList.h>
+#include <maya/MUintArray.h>
+#include <maya/MFloatPoint.h>
+#include <maya/MDagPath.h>
+#include <maya/MFnNurbsCurve.h>
+#include <maya/MItCurveCV.h>
+
+#include <sstream>
+#include <string>
+
+#include <list>
+#include "vec.h"
+#include <vector>
+#include "OverCoatCmd.h"
+#include "PointProjection.h"
+
+OverCoatCmd::OverCoatCmd() : MPxCommand()
+{
+}
+
+OverCoatCmd::~OverCoatCmd() 
+{
+}
+
+string dtos(double dd)
+{
+	std::ostringstream s;
+	s << dd;
+	return  s.str();
+}
+
+MStatus OverCoatCmd::doIt( const MArgList& args )
+{
+	MGlobal::displayInfo(MString("Creating Overcoat Node"));
+	MStatus stat = MS::kSuccess;  
+
+	int thickNess = 2; 
+	double weight = 1.0; 
+	double strokeOffset = 25.7f; 
+	double transparency = 1; 
+	double level = 1;
+
+    //loop through the command line arguments   
+	for(int i = 0; i < args.length(); ++i)
+	{
+		//check for a valid arguments 
+		if(args.asString(i, &stat) == "-thick")
+		{
+			MString para1 = args.asString(++i); 
+			thickNess = para1.asDouble(); 
+		}
+		if(args.asString(i, &stat) == "-weight")
+		{
+			MString para2 = args.asString(++i);
+			weight = para2.asDouble();
+		}
+		if(args.asString(i, &stat) == "-strok")
+		{
+			MString para3 = args.asString(++i);
+			strokeOffset = para3.asDouble();
+		}
+		if(args.asString(i, &stat) == "-trans")
+		{
+			MString para4 = args.asString(++i);
+			transparency = para4.asDouble(); 
+		}
+	    if(args.asString(i, &stat) == "-level")
+		{
+			MString para5 = args.asString(++i);
+			level = para5.asDouble(); 
+		}
+	}
+
+	/*
+	//get the view direction and eye position of 
+	MFloatVector view_dir; 
+	MFloatPoint eye_pos;
+	MItDag it(MItDag::kDepthFirst, MFn::kCamera); 
+	MFloatMatrix projectionMat; 
+
+	//some declaration about bspline 
+    int degree = 0; 
+	int knots = 0; 
+
+    for ( ; !it.isDone(); it.next() )
+    {
+        MDagPath campath;
+		it.getPath(campath); 
+        MFnCamera fn(campath);
+	
+		MString persp = "perspShape"; 
+		if(fn.name()==persp)
+		{
+			view_dir=MFloatVector(fn.viewDirection(MSpace::kWorld));
+			eye_pos=MFloatPoint(fn.eyePoint(MSpace::kWorld)); 
+		}
+    }
+	cout<<"view direction:"<<view_dir.x<<" "<<view_dir.y<<" "<<view_dir.z<<endl; 
+    cout<<"eye position:"<<eye_pos.x<<" "<<eye_pos.y<<" "<<eye_pos.z<<endl;
+	*/
+
+
+	/*  
+	while (!it.isDone())
+	{
+		MDagPath campath;		
+		it.getPath(campath);   
+
+		MFnCamera fn(campath); 
+		MFnNurbsCurve NCurve(campath); 
+
+
+		//fn.getViewingFrustum (windowAspect, left, right, bottom, top); 
+
+		//projectionMat = fn.projectionMatrix();
+		MString persp = "perspShape"; 
+		if(fn.name()==persp)
+		{
+			view_dir=MFloatVector(fn.viewDirection(MSpace::kWorld));
+			eye_pos=MFloatPoint(fn.eyePoint(MSpace::kWorld)); 
+
+			knots = NCurve.numKnots(); 
+			degree = NCurve.degree(); 
+		}
+		it.next();
+	}
+	cout<<"view direction:"<<view_dir.x<<" "<<view_dir.y<<" "<<view_dir.z<<endl; 
+    cout<<"eye position:"<<eye_pos.x<<" "<<eye_pos.y<<" "<<eye_pos.z<<endl;
+	cout<<"number of knots:"<<knots<<endl; 
+	cout<<"number of degrees:"<<degree<<endl;   
+	*/
+
+	//vec3 pc = vec3 (view_dir.x, view_dir.y, view_dir.z);
+	//vec3 ep = vec3 (eye_pos.x, eye_pos.y, eye_pos.z);   
+
+	//MFnNurbsCurve NCurve; 
+	//PointProjection PP(pc, ep); 
+	//PP.ThreeDtoTwoD(); 
+
+	//get the first selected curve from the selection list. 
+
+	MFloatVector view_dir; 
+	MFloatPoint eye_pos;
+	MItDag it(MItDag::kDepthFirst, MFn::kNurbsCurve);
+
+	int index = 0; 
+	vector <int> numCVs(5); 
+	MPointArray testArray (1000, MPoint::origin); 
+	MPointArray testPara (1000, MPoint::origin); 
+	MPoint StartPoint, EndPoint;
+	double StartPara =0;
+	double EndPara =0; 
+	int array[10]; 
+
+	for ( ; !it.isDone(); it.next() )
+    {
+        MDagPath curvepath;
+		it.getPath(curvepath); 
+		MFnNurbsCurve curveFn (curvepath); 
+		numCVs[index] = curveFn.numCVs();
+		curveFn.getCVs (testArray, MSpace::kObject);
+		for(int i=0; i < testArray.length(); i++)
+		{
+			//curveFn.getParamAtPoint(testArray[i], 
+		}
+		int LEN = testArray.length(); 
+		StartPoint = testArray[0]; 
+		EndPoint = testArray[LEN-1];    
+
+		curveFn.getParamAtPoint(StartPoint, StartPara, MSpace::kObject); 
+		curveFn.getParamAtPoint(EndPoint, EndPara, MSpace::kObject); 
+
+		int arrIndex = 0; 
+		for (double u = StartPara; u <=EndPara; u = u+0.1)
+		{
+			MPoint testPoint;
+			curveFn.getPointAtParam(u, testPoint, MSpace::kObject); 
+			testPara[arrIndex].x= testPoint.x; 
+			testPara[arrIndex].y= testPoint.y;     
+			testPara[arrIndex].z= testPoint.z;   
+			arrIndex++;   
+		}
+
+
+		/*
+		int arrIndex = 0; 
+		for(int u = 0; u <  numCVs[index]; u++)
+		{
+			MPoint testPoint; 
+			curveFn.getPointAtParam (u, testPoint, MSpace::kObject); 
+           // int arrIndex = (int)(10.0*u); 
+			testArray[arrIndex].x= testPoint.x; 
+			testArray[arrIndex].y= testPoint.y;     
+			testArray[arrIndex].z= testPoint.z;   
+			arrIndex++;    
+		} */
+
+		/*  
+		int arrIndex = 0;   
+		for(double u = 0.0; u < (double) (numCVs[index]); u = u+0.1)
+		{
+			MPoint testPoint; 
+			curveFn.getPointAtParam (u, testPoint, MSpace::kObject);   
+           // int arrIndex = (int)(10.0*u); 
+			testArray[arrIndex].x= testPoint.x; 
+			testArray[arrIndex].y= testPoint.y;     
+			testArray[arrIndex].z= testPoint.z;     
+			arrIndex++;        
+		}  */     
+
+	index++; 
+   }
+
+	cout<<endl; 
+	cout<<endl; 
+	cout<<"index:"<<index<<endl; 
+	cout<<"this is all about the selective points:"<<endl; 
+	for(int i = 0; i<index; i++)
+	{
+		cout<<"number of curves "<<(i+1)<<":"<<numCVs[i]<<endl; 
+		for(int j = 0; j<testArray.length(); j++)
+		{
+			cout<<"testarray "<<j<<" :"<<testArray[j].x<<","<<testArray[j].y<<","<<testArray[j].z<<endl;    
+		}
+	}
+
+	cout<<endl; 
+	cout<<endl; 
+	cout<<"this is all about the parameter points:"<<endl; 
+	cout<<"startPoint:"<<StartPoint.x<<","<<StartPoint.y<<","<<StartPoint.z<<endl;
+	cout<<"endPoint:"<<EndPoint.x<<","<<EndPoint.y<<","<<EndPoint.z<<endl;
+	cout<<endl; 
+	cout<<"startPara:"<<StartPara<<endl; 
+	cout<<"endPara:"<<EndPara<<endl; 
+    cout<<endl; 
+    cout<<endl;
+
+	for(int i = 0; i<index; i++)
+	{
+		for(int j = 0; j<(10*EndPara+1); j++)
+		{
+			cout<<"testPara "<<j<<" :"<<testPara[j].x<<","<<testPara[j].y<<","<<testPara[j].z<<endl;    
+		}
+	}
+
+
+	
+	//what I have done is actually very simple here I     
+
+	//cout<<"number of curves:"<<numCVs<<endl;   
+	
+	/*MSelectionList slist; 
+	MGlobal::getActiveSelectionList(slist); 
+	MItSelectionList it(slist, MFn::kCamera, &stat); */
+
+    return MStatus::kSuccess;
+}

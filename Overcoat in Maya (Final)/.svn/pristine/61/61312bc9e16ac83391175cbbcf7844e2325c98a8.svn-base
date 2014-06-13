@@ -1,0 +1,57 @@
+global proc overcoatFeatherToolValuesSetColor(string $tool, string $flag, string $control)
+{
+	if (`colorSliderGrp -exists $control` &&
+		`FeatherToolContext -exists $tool`)
+	{
+		string $cmd = ("colorSliderGrp -q -rgb " + $control);
+
+		float $color[] = eval($cmd);
+
+		$cmd = ("FeatherToolContext -edit -" + $flag);
+		$cmd += (" " + $color[0]);
+		$cmd += (" " + $color[1]);
+		$cmd += (" " + $color[2]);
+		$cmd += (" " + $tool);
+
+		eval $cmd;
+	}
+}
+
+global proc overcoatFeatherToolValues ( string $toolName ) {
+	int $valNumOfBrushes = 16; //Number of brushes + 1;
+	string $parent = (`toolPropertyWindow -q -location` + "|overcoatFeatherTool");
+	setParent $parent;
+	
+	string $cmd;
+	float $color[] = `FeatherToolContext -q -color $toolName`;
+	$cmd = ("overcoatFeatherToolValuesSetColor \"" + $toolName + "\" \"color\" \"featherToolColorSlider\"");
+	colorSliderGrp -edit -rgbValue $color[0] $color[1] $color[2] 
+			-changeCommand ($cmd)
+			featherToolColorSlider;
+			
+	floatSliderGrp -e
+		-value `FeatherToolContext -q -thickness $toolName`
+		-changeCommand ("FeatherToolContext -edit -thickness #1 " + $toolName)
+		featherToolThickness;
+		
+	floatSliderGrp -e
+		-value `FeatherToolContext -q -transparency $toolName`
+		-changeCommand ("FeatherToolContext -edit -transparency #1 " + $toolName)
+		featherToolTransparency;
+		
+	image -e -image ("overcoat_Images/type" + `FeatherToolContext -q -brush $toolName` + ".bmp") currentBrush;
+		
+	for($i = 1; $i < $valNumOfBrushes; $i++){
+        	string $label = "brushButton" + $i;
+               	symbolButton -e -command ("FeatherToolContext -edit -brush " + $i + " " + $toolName) $label;
+        }
+        
+	floatSliderGrp -e
+		-value `FeatherToolContext -q -spacing $toolName`
+		-changeCommand ("FeatherToolContext -edit -spacing #1 " + $toolName)
+		featherToolSpacing;
+
+	string $helpTag = "FeatherTool";
+	toolPropertySelect "overcoatFeatherTool";
+	
+}

@@ -1,0 +1,30 @@
+#ifndef OverCoatCmd_H_
+#define OverCoatCmd_H_
+
+#include <maya/MPxCommand.h>
+#include <string>
+#include "vec.h"
+//added 
+#include "EasyBMP.h"
+//added 
+
+class OverCoatCmd : public MPxCommand 
+{                                                       
+public:   
+	    //added
+	    BMP AnImage1;
+		BMP AnImage2;
+		BMP AnImage3;
+		BMP AnImage4;
+		//added 
+        OverCoatCmd() {};
+        ~OverCoatCmd() {}; 
+        virtual MStatus doIt ( const MArgList& );      
+        static void*    creator() {return new OverCoatCmd();};
+		//added 
+		void Rendering (int Image_Height, int Image_Width,  string name, int frameNumber, int flag); 
+		//added 
+};
+
+
+#endif
